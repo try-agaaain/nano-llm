@@ -1,0 +1,13 @@
+[project]
+name = "nano-llm"
+version = "0.1.0"
+description = "轻量级LLM模型实现，使用TinyStories数据集和HuggingFace分词器"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "datasets>=2.10.0",
+    "transformers>=4.30.0",
+    "tokenizers>=0.13.0",
+    "hf-transfer>=0.1.9",
+    "huggingface-hub>=0.36.1",
+]
