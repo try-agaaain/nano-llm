@@ -1,5 +1,6 @@
 """模型训练脚本 - 使用TinyStories数据集和HuggingFace分词器"""
 
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -7,6 +8,7 @@ from torch.utils.data import DataLoader, IterableDataset
 from datasets import load_dataset
 import time
 from tqdm import tqdm
+import wandb
 from model import NanoLLM
 from tokenizer import load_or_train_tokenizer
 
@@ -120,6 +122,12 @@ def train_epoch(model, train_loader, optimizer, criterion, device, epoch, max_st
         
         # 显示当前batch的loss
         pbar.set_postfix(loss=loss.item())
+        
+        # 记录到wandb
+        wandb.log({
+            "train_loss": loss.item(),
+            "batch": batch_idx
+        })
     
     elapsed_time = time.time() - start_time
     avg_loss = total_loss / num_batches if num_batches > 0 else 0
@@ -149,6 +157,11 @@ def evaluate(model, val_loader, criterion, device, max_steps=None):
             num_batches += 1
             
             pbar.set_postfix(loss=loss.item())
+            
+            # 记录到wandb
+            wandb.log({
+                "val_loss": loss.item()
+            })
     
     avg_loss = total_loss / num_batches if num_batches > 0 else 0
     return avg_loss
@@ -156,6 +169,25 @@ def evaluate(model, val_loader, criterion, device, max_steps=None):
 
 def main():
     """主训练函数"""
+    
+    # 初始化wandb
+    wandb_api_key = os.getenv("WANDB_API_KEY", "")
+    if not wandb_api_key:
+        raise ValueError("WANDB_API_KEY未设置。请在环境变量中设置API密钥")
+    wandb.login(key=wandb_api_key)
+    wandb.init(
+        project="nano-llm",
+        name="TinyStories-training",
+        config={
+            "d_model": 256,
+            "num_heads": 8,
+            "num_layers": 4,
+            "batch_size": 32,
+            "max_length": 256,
+            "learning_rate": 0.001,
+            "num_epochs": 3,
+        }
+    )
     
     # 超参数
     d_model = 256
@@ -263,15 +295,29 @@ def main():
         print(f"  验证损失: {val_loss:.4f}")
         print(f"  耗时: {train_time:.2f}秒")
         
+        # 记录epoch级别的指标到wandb
+        wandb.log({
+            "epoch": epoch + 1,
+            "epoch_train_loss": train_loss,
+            "epoch_val_loss": val_loss,
+            "epoch_time": train_time
+        })
+        
         # 保存最佳模型
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(model.state_dict(), "best_model.pt")
             print(f"  ✓ 保存最佳模型 (val_loss: {val_loss:.4f})")
+            
+            # 上传最佳模型到wandb
+            wandb.save("best_model.pt")
     
     print("\n" + "=" * 70)
     print("训练完成!")
     print("=" * 70)
+    
+    # 结束wandb记录
+    wandb.finish()
     
     # 文本生成演示
     print("\n文本生成演示:")

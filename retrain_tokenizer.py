@@ -3,7 +3,10 @@ from pathlib import Path
 import shutil
 from tokenizer import load_or_train_tokenizer
 import os
-os.environ["HF_TOKEN"] = "HF_TOKEN_REMOVED"
+
+if not os.getenv("HF_TOKEN"):
+    raise ValueError("HF_TOKEN未设置。请在环境变量中设置HuggingFace API令牌")
+
 # 删除旧的tokenizer
 tokenizer_path = Path("./tokenizer")
 if tokenizer_path.exists():
