@@ -76,12 +76,12 @@ kinit:
 
 kpush:
 	@echo "推送 Notebook 到 Kaggle..."
-	$(PYTHON) -m kaggle kernels push -p kaggle
+	uv run kaggle kernels push -p kaggle
 	@echo "✅ Notebook 已推送到 Kaggle"
 
 kpull:
 	@echo "从 Kaggle 拉取 Notebook..."
-	$(PYTHON) -m kaggle kernels pull team317/train-llm -p ./kaggle -m
+	uv run kaggle kernels pull team317/nano-llm -p ./kaggle -m
 	@echo "✅ Notebook 已拉取"
 
 kstatus:

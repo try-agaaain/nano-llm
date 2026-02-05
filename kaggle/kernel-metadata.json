@@ -1,6 +1,6 @@
 {
-  "id": "team317/nanollm-training",
-  "title": "NanoLLM Training",
+  "id": "team317/nano-llm",
+  "title": "NanoLLM Training Latest",
   "code_file": "train-llm-en.ipynb",
   "language": "python",
   "kernel_type": "notebook",
@@ -8,15 +8,8 @@
   "enable_gpu": true,
   "enable_tpu": false,
   "enable_internet": true,
-  "keywords": [
-    "llm",
-    "training",
-    "transformers",
-    "tinystories"
-  ],
-  "dataset_sources": [
-    "thawro/tinystories-narrative-classification"
-  ],
+  "keywords": ["llm", "training", "transformers"],
+  "dataset_sources": ["thedevastator/tinystories-narrative-classification"],
   "kernel_sources": [],
   "competition_sources": [],
   "model_sources": []
