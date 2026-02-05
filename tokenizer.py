@@ -1,11 +1,13 @@
 """
 TinyStories 自定义分词器 - 基于 BPE 算法，针对 TinyStories 数据集优化
+支持从 CSV 和 HuggingFace 数据集加载
 """
 
 import os
 import tempfile
+import csv
 from pathlib import Path
-from typing import List, Optional, Iterator
+from typing import List, Optional, Iterator, Union
 
 from transformers import PreTrainedTokenizerFast
 from tokenizers import Tokenizer, models, trainers, pre_tokenizers, decoders
@@ -77,9 +79,11 @@ def train_tokenizer_from_tinystories(
     num_samples: int = 50000,
     split: str = "train",
     dataset_dir: Optional[str] = None,
+    csv_path: Optional[str] = None,
+    text_column: str = "text",
 ) -> TinyStoriesTokenizerFast:
     """
-    从 TinyStories 数据集训练 BPE 分词器
+    从 TinyStories 数据集或 CSV 文件训练 BPE 分词器
     
     Args:
         save_path: 保存路径
@@ -87,6 +91,8 @@ def train_tokenizer_from_tinystories(
         num_samples: 用于训练分词器的样本数量（默认 50000）
         split: 数据集分割（train/validation）
         dataset_dir: 数据集缓存目录（如果为 None，使用默认的 dataset 目录）
+        csv_path: CSV 文件路径（如果提供，优先于数据集）
+        text_column: CSV 中文本列的名称（默认 "text"）
     
     Returns:
         TinyStoriesTokenizerFast: 训练后的 tokenizer
@@ -115,59 +121,93 @@ def train_tokenizer_from_tinystories(
     # 3. 收集训练文本
     print("   正在收集训练文本...")
     
-    # 从 HuggingFace 数据集加载
-    print(f"   从 HuggingFace 数据集加载 ({split} 分割)...")
-    
-    # 设置数据集缓存目录
-    if dataset_dir is None:
-        # 默认使用当前目录下的 dataset 文件夹
-        dataset_dir = str(Path.cwd() / "dataset")
-    
-    # 确保目录存在
-    Path(dataset_dir).mkdir(parents=True, exist_ok=True)
-    print(f"   数据集将保存到: {dataset_dir}")
-    
-    # 使用非流式加载，确保数据真实下载到 cache_dir
-    dataset = load_dataset(
-        "./dataset",
-        split=split,
-        streaming=False,  # 改为 False，让数据真实下载
-        cache_dir=dataset_dir,
-        download_mode="force_redownload",  # 强制下载（如果已缓存则使用缓存）
-    )
-    
     # 创建临时文件来存储训练文本
     temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8')
     temp_file_path = temp_file.name
     
     try:
         collected_samples = 0
-        for example in tqdm(dataset, desc="收集文本", total=num_samples):
-            if collected_samples >= num_samples:
-                break
-            
-            # 尝试多种可能的字段名
-            story = None
-            for field_name in ["story", "text", "content", "sentence"]:
-                if field_name in example:
-                    story = example[field_name]
-                    break
-            
-            if story is None:
-                # 如果没有找到，使用第一个字符串字段
-                for key, value in example.items():
-                    if isinstance(value, str):
-                        story = value
+        
+        # 从 CSV 或数据集加载数据
+        if csv_path and os.path.exists(csv_path):
+            print(f"   从 CSV 文件加载: {csv_path}")
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                csv_reader = csv.DictReader(f)
+                for row in tqdm(csv_reader, desc="收集文本", total=num_samples):
+                    if collected_samples >= num_samples:
                         break
+                    
+                    # 获取文本字段
+                    if text_column not in row:
+                        # 尝试寻找其他可能的列名
+                        for col in ["text", "story", "content", "narrative"]:
+                            if col in row:
+                                text = row[col]
+                                break
+                        else:
+                            # 使用第一个非空字段
+                            text = next((v for v in row.values() if v), None)
+                    else:
+                        text = row[text_column]
+                    
+                    if not text or not isinstance(text, str) or not text.strip():
+                        continue
+                    
+                    # 清理文本
+                    cleaned_text = "\n".join(line.strip() for line in text.split("\n") if line.strip())
+                    temp_file.write(cleaned_text + "\n\n")
+                    collected_samples += 1
+        else:
+            # 从 HuggingFace 数据集加载
+            print(f"   从 HuggingFace 数据集加载 ({split} 分割)...")
             
-            if story is None:
-                print(f"   ⚠️  警告: 无法找到文本字段，跳过此样本")
-                continue
+            # 设置数据集缓存目录
+            if dataset_dir is None:
+                # 默认使用当前目录下的 dataset 文件夹
+                dataset_dir = str(Path.cwd() / "dataset")
             
-            # 清理文本：移除多余空白，保留换行
-            cleaned_story = "\n".join(line.strip() for line in story.split("\n") if line.strip())
-            temp_file.write(cleaned_story + "\n\n")
-            collected_samples += 1
+            # 确保目录存在
+            Path(dataset_dir).mkdir(parents=True, exist_ok=True)
+            
+            # 使用非流式加载，确保数据真实下载到 cache_dir
+            try:
+                dataset = load_dataset(
+                    "./dataset",
+                    split=split,
+                    streaming=False,
+                    cache_dir=dataset_dir,
+                    download_mode="force_redownload",
+                )
+                
+                for example in tqdm(dataset, desc="收集文本", total=num_samples):
+                    if collected_samples >= num_samples:
+                        break
+                    
+                    # 尝试多种可能的字段名
+                    story = None
+                    for field_name in ["text", "story", "content", "narrative", "sentence"]:
+                        if field_name in example:
+                            story = example[field_name]
+                            break
+                    
+                    if story is None:
+                        # 如果没有找到，使用第一个字符串字段
+                        for key, value in example.items():
+                            if isinstance(value, str):
+                                story = value
+                                break
+                    
+                    if story is None or not isinstance(story, str) or not story.strip():
+                        continue
+                    
+                    # 清理文本
+                    cleaned_story = "\n".join(line.strip() for line in story.split("\n") if line.strip())
+                    temp_file.write(cleaned_story + "\n\n")
+                    collected_samples += 1
+            except Exception as e:
+                print(f"   ⚠️  从 HuggingFace 加载失败: {e}")
+                print(f"   请确保提供了 CSV 文件路径或数据集目录")
+                raise
         
         temp_file.close()
         print(f"   ✅ 已收集 {collected_samples} 个样本")
@@ -212,6 +252,8 @@ def load_or_train_tokenizer(
     num_samples: int = 50000,
     force_retrain: bool = False,
     dataset_dir: Optional[str] = None,
+    csv_path: Optional[str] = None,
+    text_column: str = "text",
 ) -> TinyStoriesTokenizerFast:
     """
     加载已存在的分词器，如果不存在则训练新的
@@ -222,6 +264,8 @@ def load_or_train_tokenizer(
         num_samples: 训练样本数（仅在训练时使用）
         force_retrain: 是否强制重新训练
         dataset_dir: 数据集缓存目录（如果为 None，使用默认的 dataset 目录）
+        csv_path: CSV 文件路径（如果提供，优先于数据集）
+        text_column: CSV 中文本列的名称（默认 "text"）
     
     Returns:
         TinyStoriesTokenizerFast: 分词器实例
@@ -243,6 +287,8 @@ def load_or_train_tokenizer(
             vocab_size=vocab_size,
             num_samples=num_samples,
             dataset_dir=dataset_dir,
+            csv_path=csv_path,
+            text_column=text_column,
         )
 
 if __name__ == "__main__":

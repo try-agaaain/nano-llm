@@ -1,6 +1,7 @@
-"""模型训练脚本 - 使用TinyStories数据集和HuggingFace分词器"""
+"""模型训练脚本 - 使用TinyStories数据集或 Kaggle CSV 数据和HuggingFace分词器"""
 
 import os
+import csv
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -14,33 +15,99 @@ from tokenizer import load_or_train_tokenizer
 
 
 class TinyStoriesDataset(IterableDataset):
-    """TinyStories数据集包装器"""
+    """TinyStories数据集或CSV数据包装器"""
     
-    def __init__(self, tokenizer, max_length=512, split="train", num_samples=None):
+    def __init__(self, tokenizer, max_length=512, split="train", num_samples=None, csv_path=None, text_column="text"):
         """
         Args:
             tokenizer: HuggingFace分词器
             max_length: 最大序列长度
-            split: 数据集分割（train/validation）
+            split: 数据集分割（train/validation）- 仅对数据集使用
             num_samples: 限制样本数量（调试用）
+            csv_path: CSV 文件路径（如果提供，优先于数据集）
+            text_column: CSV 中文本列的名称
         """
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.num_samples = num_samples
+        self.csv_path = csv_path
+        self.text_column = text_column
+        self.split = split
+        self.data = []
         
-        # 加载TinyStories数据集
-        print(f"正在加载TinyStories数据集 ({split} 分割)...")
-        # self.dataset = load_dataset("roneneldan/TinyStories", split=split, streaming=True)
-        self.dataset = load_dataset("./dataset", split=split, streaming=False)
-        
-        if num_samples:
-            self.dataset = self.dataset.take(num_samples)
+        # 加载数据
+        if csv_path and os.path.exists(csv_path):
+            print(f"正在加载 CSV 数据集: {csv_path}")
+            self._load_csv_data(csv_path)
+        else:
+            print(f"正在加载TinyStories数据集 ({split} 分割)...")
+            self._load_hf_dataset(split)
+    
+    def _load_csv_data(self, csv_path):
+        """从 CSV 文件加载数据"""
+        try:
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                csv_reader = csv.DictReader(f)
+                for idx, row in enumerate(csv_reader):
+                    if self.num_samples and idx >= self.num_samples:
+                        break
+                    
+                    # 获取文本字段
+                    if self.text_column not in row:
+                        # 尝试寻找其他可能的列名
+                        text = None
+                        for col in ["text", "story", "content", "narrative"]:
+                            if col in row:
+                                text = row[col]
+                                break
+                        if not text:
+                            text = next((v for v in row.values() if v), None)
+                    else:
+                        text = row[self.text_column]
+                    
+                    if text and isinstance(text, str) and text.strip():
+                        self.data.append(text.strip())
+            
+            print(f"已加载 {len(self.data)} 个 CSV 样本")
+        except Exception as e:
+            print(f"加载 CSV 失败: {e}")
+            raise
+    
+    def _load_hf_dataset(self, split):
+        """从 HuggingFace 数据集加载数据"""
+        try:
+            dataset = load_dataset("./dataset", split=split, streaming=False)
+            
+            for idx, example in enumerate(dataset):
+                if self.num_samples and idx >= self.num_samples:
+                    break
+                
+                # 尝试多种可能的字段名
+                story = None
+                for field_name in ["text", "story", "content", "narrative", "sentence"]:
+                    if field_name in example:
+                        story = example[field_name]
+                        break
+                
+                if story is None:
+                    for key, value in example.items():
+                        if isinstance(value, str):
+                            story = value
+                            break
+                
+                if story and isinstance(story, str) and story.strip():
+                    self.data.append(story.strip())
+            
+            print(f"已加载 {len(self.data)} 个数据集样本")
+        except Exception as e:
+            print(f"加载 HuggingFace 数据集失败: {e}")
+            # 如果加载失败，尝试从本地 CSV
+            if not self.csv_path:
+                raise
     
     def __iter__(self):
         """迭代数据集"""
-        for idx, example in enumerate(self.dataset):
-            text = example["text"]
-            
+        for text in self.data:
             # 分词并对齐到固定长度，方便 DataLoader 批量堆叠
             tokens = self.tokenizer(
                 text,
@@ -66,21 +133,34 @@ class TinyStoriesDataset(IterableDataset):
             }
 
 
-def create_data_loaders(tokenizer, batch_size=32, max_length=512, num_samples_train=None, num_samples_val=None):
+def create_data_loaders(
+    tokenizer, 
+    batch_size=32, 
+    max_length=512, 
+    num_samples_train=None, 
+    num_samples_val=None,
+    train_csv_path=None,
+    val_csv_path=None,
+    text_column="text"
+):
     """创建训练和验证数据加载器"""
     
     train_dataset = TinyStoriesDataset(
         tokenizer,
         max_length=max_length,
         split="train",
-        num_samples=num_samples_train
+        num_samples=num_samples_train,
+        csv_path=train_csv_path,
+        text_column=text_column
     )
     
     val_dataset = TinyStoriesDataset(
         tokenizer,
         max_length=max_length,
         split="validation",
-        num_samples=num_samples_val
+        num_samples=num_samples_val,
+        csv_path=val_csv_path,
+        text_column=text_column
     )
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size)
@@ -210,12 +290,19 @@ def main():
     
     # 加载分词器
     print("正在加载TinyStories分词器...")
+    
+    # 检查 Kaggle CSV 路径
+    train_csv_path = "/kaggle/input/tinystories-narrative-classification/train.csv"
+    csv_path_for_tokenizer = train_csv_path if os.path.exists(train_csv_path) else None
+    
     tokenizer = load_or_train_tokenizer(
         tokenizer_path="./tokenizer",
         vocab_size=8192,
         num_samples=50000,
         force_retrain=False,  # 改为False，只在需要时重新训练
-        dataset_dir="./dataset"
+        dataset_dir="./dataset",
+        csv_path=csv_path_for_tokenizer,
+        text_column="text"
     )
     vocab_size = tokenizer.vocab_size
     print(f"分词器词汇表大小: {vocab_size}")
@@ -247,12 +334,26 @@ def main():
     
     # 创建数据加载器
     print("\n创建数据加载器...")
+    
+    # 检查 Kaggle CSV 路径（Kaggle 上的路径）
+    train_csv_path = "/kaggle/input/tinystories-narrative-classification/train.csv"
+    val_csv_path = "/kaggle/input/tinystories-narrative-classification/validation.csv"
+    
+    # 如果本地不存在 CSV，尝试使用默认数据集
+    if not os.path.exists(train_csv_path):
+        print(f"   ℹ️  CSV 路径不存在，将使用 HuggingFace 数据集")
+        train_csv_path = None
+        val_csv_path = None
+    
     train_loader, val_loader = create_data_loaders(
         tokenizer,
         batch_size=batch_size,
         max_length=max_length,
         num_samples_train=num_samples_train,
         num_samples_val=num_samples_val,
+        train_csv_path=train_csv_path,
+        val_csv_path=val_csv_path,
+        text_column="text"
     )
     
     # 优化器和损失函数

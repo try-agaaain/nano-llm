@@ -6,7 +6,6 @@ import os
 
 if not os.getenv("HF_TOKEN"):
     raise ValueError("HF_TOKEN未设置。请在环境变量中设置HuggingFace API令牌")
-
 # 删除旧的tokenizer
 tokenizer_path = Path("./tokenizer")
 if tokenizer_path.exists():
