@@ -259,24 +259,24 @@ def main():
         project="nano-llm",
         name="TinyStories-training",
         config={
-            "d_model": 256,
+            "d_model": 384,
             "num_heads": 8,
-            "num_layers": 4,
-            "batch_size": 32,
-            "max_length": 256,
-            "learning_rate": 0.001,
-            "num_epochs": 3,
+            "num_layers": 6,
+            "batch_size": 64,
+            "max_length": 512,
+            "learning_rate": 0.0008,
+            "num_epochs": 4,
         }
     )
     
     # 超参数
-    d_model = 256
+    d_model = 384
     num_heads = 8
-    num_layers = 4
-    num_epochs = 3
-    learning_rate = 0.001
-    batch_size = 32
-    max_length = 256
+    num_layers = 6
+    num_epochs = 4
+    learning_rate = 0.0008
+    batch_size = 64
+    max_length = 512
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # 对于调试，可以限制样本数量

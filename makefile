@@ -1,97 +1,73 @@
-# nano-llm 项目 Makefile
-# 环境设置
-VENV = .venv
-PYTHON = $(VENV)/bin/python
-PIP = $(VENV)/bin/pip
-
-# 默认目标
+# nano-llm Makefile
 .DEFAULT_GOAL := help
 
-# 帮助信息
 help:
-	@echo "NanoLLM 项目 - 可用命令:"
+	@echo "NanoLLM Makefile Commands:"
 	@echo ""
-	@echo "  环境管理:"
-	@echo "  make setup        初始化开发环境"
-	@echo "  make install      安装依赖包"
+	@echo "  Training:"
+	@echo "  make train        Run training"
+	@echo "  make test         Run tests"
+	@echo "  make infer        Run inference"
 	@echo ""
-	@echo "  训练和推理:"
-	@echo "  make train        训练模型"
-	@echo "  make test         运行单元测试"
-	@echo "  make infer        运行推理脚本"
+	@echo "  Kaggle:"
+	@echo "  make kinit        Init Kaggle metadata"
+	@echo "  make kdataset     Upload secrets dataset"
+	@echo "  make kpush        Push notebook to Kaggle"
+	@echo "  make kpull        Pull notebook from Kaggle"
+	@echo "  make kstatus      Check notebook status"
+	@echo "  make koutput      Get notebook output"
 	@echo ""
-	@echo "  Kaggle 集成:"
-	@echo "  make kinit        初始化 Kaggle Notebook 元数据"
-	@echo "  make kpush        推送 Notebook 到 Kaggle"
-	@echo "  make kpull        从 Kaggle 拉取 Notebook"
-	@echo "  make kstatus      检查 Kaggle Notebook 状态"
-	@echo "  make koutput      获取 Kaggle Notebook 输出"
-	@echo ""
-	@echo "  清理:"
-	@echo "  make clean        清理生成文件"
-	@echo ""
-
-# 初始化环境
 setup:
-	@echo "初始化 Python 虚拟环境..."
-	python -m venv $(VENV)
-	$(PIP) install --upgrade pip
-	$(PIP) install -q uv
-	@echo "✅ 虚拟环境已创建"
+	@echo "Setting up uv run virtual environment..."
+	uv run venv .venv
+	@echo "Virtual environment ready"
 
-# 安装依赖
 install:
-	@echo "安装项目依赖..."
-	$(PIP) install -q torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-	$(PIP) install -q transformers datasets tokenizers tqdm wandb
-	@echo "✅ 依赖安装完成"
+	@echo "Installing dependencies..."
+	uv run pip install -q torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+	uv run pip install -q transformers datasets tokenizers tqdm wandb
+	@echo "Dependencies installed"
 
-# 训练模型
 train:
-	@echo "启动模型训练..."
-	$(PYTHON) train.py
+	@echo "Starting training..."
+	uv run train.py
 
-# 运行推理
 infer:
-	@echo "运行推理脚本..."
-	$(PYTHON) inference.py
+	@echo "Running inference..."
+	uv run inference.py
 
-# 运行测试
 test:
-	@echo "运行测试..."
-	$(PYTHON) -m pytest test_*.py -v
+	@echo "Running tests..."
+	uv run pytest test_*.py -v
 
-# 清理
 clean:
-	@echo "清理生成文件..."
+	@echo "Cleaning generated files..."
 	rm -rf __pycache__ .pytest_cache *.pyc
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	@echo "✅ 清理完成"
-
-# Kaggle 集成命令
 kinit:
-	@echo "初始化 Kaggle Notebook 元数据..."
-	$(PYTHON) -m kaggle kernels init -p kaggle
-	@echo "✅ 元数据文件已创建: kaggle/kernel-metadata.json"
+	@echo "Initializing Kaggle metadata..."
+	uv run kaggle kernels init -p kaggle
+	@echo "Metadata created: kaggle/kernel-metadata.json"
+
+kdataset:
+	@echo "Uploading secrets dataset to Kaggle..."
+	uv run kaggle datasets create -p my-secrets
+	@echo "Secrets dataset uploaded"
 
 kpush:
-	@echo "推送 Notebook 到 Kaggle..."
+	@echo "Pushing notebook to Kaggle..."
 	uv run kaggle kernels push -p kaggle
-	@echo "✅ Notebook 已推送到 Kaggle"
+	@echo "Notebook pushed to Kaggle"
 
 kpull:
-	@echo "从 Kaggle 拉取 Notebook..."
+	@echo "Pulling notebook from Kaggle..."
 	uv run kaggle kernels pull team317/nano-llm -p ./kaggle -m
-	@echo "✅ Notebook 已拉取"
+	@echo "Notebook pulled"
 
 kstatus:
-	@echo "检查 Kaggle Notebook 状态..."
-	$(PYTHON) -m kaggle kernels status team317/train-llm
+	@echo "Checking notebook status..."
+	uv run -m kaggle kernels status team317/nano-llm
 
 koutput:
-	@echo "获取 Kaggle Notebook 输出..."
+	@echo "Getting notebook output..."
 	mkdir -p kaggle/output
-	$(PYTHON) -m kaggle kernels output team317/train-llm -p ./kaggle/output
-	@echo "✅ 输出已保存到 kaggle/output"
-
-.PHONY: help setup install train infer test clean kinit kpush kpull kstatus koutput
+	pythonlp setup install train infer test clean kinit kdataset kpush kpull kstatus koutput
