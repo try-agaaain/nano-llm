@@ -221,7 +221,7 @@ def main():
     num_heads = 8
     num_layers = 6
     learning_rate = 0.0001
-    batch_size = 64
+    batch_size = 32
     max_length = 1024
     max_steps = 70000  # 最大训练步数
     validation_interval = 50000  # 每50000步进行一次验证和保存
