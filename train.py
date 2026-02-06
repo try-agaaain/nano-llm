@@ -2,6 +2,7 @@
 
 import os
 import csv
+import random
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -17,7 +18,7 @@ from tokenizer import load_or_train_tokenizer
 class TinyStoriesDataset(IterableDataset):
     """TinyStories数据集或CSV数据包装器"""
     
-    def __init__(self, tokenizer, max_length=512, split="train", num_samples=None, csv_path=None, text_column="text"):
+    def __init__(self, tokenizer, max_length=512, split="train", num_samples=None, csv_path=None, text_column="text", shuffle=True):
         """
         Args:
             tokenizer: HuggingFace分词器
@@ -26,6 +27,7 @@ class TinyStoriesDataset(IterableDataset):
             num_samples: 限制样本数量（调试用）
             csv_path: CSV 文件路径（如果提供，优先于数据集）
             text_column: CSV 中文本列的名称
+            shuffle: 是否随机打乱数据顺序
         """
         self.tokenizer = tokenizer
         self.max_length = max_length
@@ -33,6 +35,7 @@ class TinyStoriesDataset(IterableDataset):
         self.csv_path = csv_path
         self.text_column = text_column
         self.split = split
+        self.shuffle = shuffle
         self.data = []
         
         # 加载数据
@@ -68,6 +71,9 @@ class TinyStoriesDataset(IterableDataset):
                     if text and isinstance(text, str) and text.strip():
                         self.data.append(text.strip())
             
+            if self.shuffle:
+                random.shuffle(self.data)
+            
             print(f"已加载 {len(self.data)} 个 CSV 样本")
         except Exception as e:
             print(f"加载 CSV 失败: {e}")
@@ -97,6 +103,9 @@ class TinyStoriesDataset(IterableDataset):
                 
                 if story and isinstance(story, str) and story.strip():
                     self.data.append(story.strip())
+            
+            if self.shuffle:
+                random.shuffle(self.data)
             
             print(f"已加载 {len(self.data)} 个数据集样本")
         except Exception as e:
@@ -141,7 +150,9 @@ def create_data_loaders(
     num_samples_val=None,
     train_csv_path=None,
     val_csv_path=None,
-    text_column="text"
+    text_column="text",
+    shuffle_train=True,
+    shuffle_val=False
 ):
     """创建训练和验证数据加载器"""
     
@@ -151,7 +162,8 @@ def create_data_loaders(
         split="train",
         num_samples=num_samples_train,
         csv_path=train_csv_path,
-        text_column=text_column
+        text_column=text_column,
+        shuffle=shuffle_train
     )
     
     val_dataset = TinyStoriesDataset(
@@ -160,7 +172,8 @@ def create_data_loaders(
         split="validation",
         num_samples=num_samples_val,
         csv_path=val_csv_path,
-        text_column=text_column
+        text_column=text_column,
+        shuffle=shuffle_val
     )
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size)
@@ -264,7 +277,7 @@ def main():
             "num_layers": 6,
             "batch_size": 64,
             "max_length": 512,
-            "learning_rate": 0.0008,
+            "learning_rate": 0.0001,
             "num_epochs": 4,
         }
     )
@@ -274,7 +287,7 @@ def main():
     num_heads = 8
     num_layers = 6
     num_epochs = 4
-    learning_rate = 0.0008
+    learning_rate = 0.0001
     batch_size = 64
     max_length = 512
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
