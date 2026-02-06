@@ -181,10 +181,24 @@ def train_step(model, batch, optimizer, criterion, device):
     return loss.item()
 
 
-def evaluate(model, val_loader, criterion, device, num_steps=100):
-    """验证模型 - 执行固定数量的step，返回损失和困惑度"""
+def evaluate(model, val_loader, criterion, device, num_steps=100, tokenizer=None, step_num=None):
+    """验证模型 - 执行固定数量的step，返回损失和困惑度，并生成测试文本"""
     model.eval()
     total_loss = 0.0
+    
+    # 定义10条测试用例
+    test_prompts = [
+        "Once upon a time",
+        "The little girl",
+        "In the forest",
+        "The brave knight",
+        "A mysterious door",
+        "The wizard cast",
+        "Under the moonlight",
+        "The treasure was",
+        "A strange creature",
+        "The adventure began"
+    ]
     
     with torch.no_grad():
         for step in range(num_steps):
@@ -204,6 +218,35 @@ def evaluate(model, val_loader, criterion, device, num_steps=100):
     avg_loss = total_loss / num_steps if num_steps > 0 else 0
     # 困惑度 = exp(平均损失)
     perplexity = torch.exp(torch.tensor(avg_loss)).item()
+    
+    # 生成测试文本
+    if tokenizer is not None:
+        print(f"\n  测试文本生成 (Step {step_num}):")
+        print("  " + "-" * 60)
+        
+        for idx, prompt_text in enumerate(test_prompts, 1):
+            try:
+                prompt_ids = tokenizer.encode(prompt_text, return_tensors="pt").to(device)
+                
+                with torch.no_grad():
+                    generated_ids = model.generate(
+                        prompt=prompt_ids,
+                        max_length=50,
+                        temperature=0.8,
+                        top_k=50,
+                    )
+                
+                generated_only_ids = generated_ids[0, prompt_ids.size(1):].tolist()
+                generated_text = tokenizer.decode(generated_only_ids, skip_special_tokens=True)
+                
+                print(f"  [{idx:2d}] 提示词: {prompt_text}")
+                print(f"      生成: {generated_text.strip()}\n")
+            except Exception as e:
+                print(f"  [{idx:2d}] 提示词: {prompt_text}")
+                print(f"      生成失败: {str(e)}\n")
+        
+        print("  " + "-" * 60)
+    
     return avg_loss, perplexity
 
 
@@ -219,12 +262,12 @@ def main():
     # 超参数
     d_model = 384
     num_heads = 8
-    num_layers = 6
+    num_layers = 8
     learning_rate = 0.0001
     batch_size = 32
     max_length = 1024
-    max_steps = 70000  # 最大训练步数
-    validation_interval = 50000  # 每50000步进行一次验证和保存
+    max_steps = 10000  # 最大训练步数
+    validation_interval = 1000
     
     wandb.init(
         project="nano-llm",
@@ -370,7 +413,9 @@ def main():
                 val_loader=val_loader,
                 criterion=criterion,
                 device=device,
-                num_steps=100
+                num_steps=100,
+                tokenizer=tokenizer,
+                step_num=step + 1
             )
             model.train()
             
