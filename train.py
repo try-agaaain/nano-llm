@@ -16,26 +16,22 @@ from tokenizer import load_or_train_tokenizer
 
 
 class TinyStoriesDataset(IterableDataset):
-    """TinyStories数据集或CSV数据包装器"""
+    """TinyStories数据集或CSV数据包装器 - 支持无限重复随机采样"""
     
-    def __init__(self, tokenizer, max_length=512, split="train", num_samples=None, csv_path=None, text_column="text", shuffle=True):
+    def __init__(self, tokenizer, max_length=512, split="train", csv_path=None, text_column="text"):
         """
         Args:
             tokenizer: HuggingFace分词器
             max_length: 最大序列长度
             split: 数据集分割（train/validation）- 仅对数据集使用
-            num_samples: 限制样本数量（调试用）
             csv_path: CSV 文件路径（如果提供，优先于数据集）
             text_column: CSV 中文本列的名称
-            shuffle: 是否随机打乱数据顺序
         """
         self.tokenizer = tokenizer
         self.max_length = max_length
-        self.num_samples = num_samples
         self.csv_path = csv_path
         self.text_column = text_column
         self.split = split
-        self.shuffle = shuffle
         self.data = []
         
         # 加载数据
@@ -51,10 +47,7 @@ class TinyStoriesDataset(IterableDataset):
         try:
             with open(csv_path, 'r', encoding='utf-8') as f:
                 csv_reader = csv.DictReader(f)
-                for idx, row in enumerate(csv_reader):
-                    if self.num_samples and idx >= self.num_samples:
-                        break
-                    
+                for row in csv_reader:
                     # 获取文本字段
                     if self.text_column not in row:
                         # 尝试寻找其他可能的列名
@@ -71,9 +64,6 @@ class TinyStoriesDataset(IterableDataset):
                     if text and isinstance(text, str) and text.strip():
                         self.data.append(text.strip())
             
-            if self.shuffle:
-                random.shuffle(self.data)
-            
             print(f"已加载 {len(self.data)} 个 CSV 样本")
         except Exception as e:
             print(f"加载 CSV 失败: {e}")
@@ -84,10 +74,7 @@ class TinyStoriesDataset(IterableDataset):
         try:
             dataset = load_dataset("./dataset", split=split, streaming=False)
             
-            for idx, example in enumerate(dataset):
-                if self.num_samples and idx >= self.num_samples:
-                    break
-                
+            for example in dataset:
                 # 尝试多种可能的字段名
                 story = None
                 for field_name in ["text", "story", "content", "narrative", "sentence"]:
@@ -104,9 +91,6 @@ class TinyStoriesDataset(IterableDataset):
                 if story and isinstance(story, str) and story.strip():
                     self.data.append(story.strip())
             
-            if self.shuffle:
-                random.shuffle(self.data)
-            
             print(f"已加载 {len(self.data)} 个数据集样本")
         except Exception as e:
             print(f"加载 HuggingFace 数据集失败: {e}")
@@ -115,9 +99,12 @@ class TinyStoriesDataset(IterableDataset):
                 raise
     
     def __iter__(self):
-        """迭代数据集"""
-        for text in self.data:
-            # 分词并对齐到固定长度，方便 DataLoader 批量堆叠
+        """无限迭代数据集，每次随机采样"""
+        while True:
+            # 随机选择一个样本（可能重复）
+            text = random.choice(self.data)
+            
+            # 分词并对齐到固定长度
             tokens = self.tokenizer(
                 text,
                 truncation=True,
@@ -145,14 +132,10 @@ class TinyStoriesDataset(IterableDataset):
 def create_data_loaders(
     tokenizer, 
     batch_size=32, 
-    max_length=512, 
-    num_samples_train=None, 
-    num_samples_val=None,
+    max_length=512,
     train_csv_path=None,
     val_csv_path=None,
     text_column="text",
-    shuffle_train=True,
-    shuffle_val=False
 ):
     """创建训练和验证数据加载器"""
     
@@ -160,20 +143,16 @@ def create_data_loaders(
         tokenizer,
         max_length=max_length,
         split="train",
-        num_samples=num_samples_train,
         csv_path=train_csv_path,
         text_column=text_column,
-        shuffle=shuffle_train
     )
     
     val_dataset = TinyStoriesDataset(
         tokenizer,
         max_length=max_length,
         split="validation",
-        num_samples=num_samples_val,
         csv_path=val_csv_path,
         text_column=text_column,
-        shuffle=shuffle_val
     )
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size)
@@ -182,62 +161,36 @@ def create_data_loaders(
     return train_loader, val_loader
 
 
-def train_epoch(model, train_loader, optimizer, criterion, device, epoch, max_steps=None):
-    """训练一个epoch"""
-    model.train()
-    total_loss = 0.0
-    num_batches = 0
+def train_step(model, batch, optimizer, criterion, device):
+    """执行单个训练step"""
+    input_ids = batch["input_ids"].to(device)
+    labels = batch["labels"].to(device)
     
-    start_time = time.time()
-    pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}")
+    # 前向传播
+    optimizer.zero_grad()
+    logits = model(input_ids)
     
-    for batch_idx, batch in enumerate(pbar):
-        if max_steps and batch_idx >= max_steps:
-            break
-        
-        input_ids = batch["input_ids"].to(device)
-        labels = batch["labels"].to(device)
-        
-        # 前向传播
-        optimizer.zero_grad()
-        logits = model(input_ids)
-        
-        # 计算损失
-        loss = criterion(logits.view(-1, logits.size(-1)), labels.view(-1))
-        
-        # 反向传播
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
-        
-        total_loss += loss.item()
-        num_batches += 1
-        
-        # 显示当前batch的loss
-        pbar.set_postfix(loss=loss.item())
-        
-        # 记录到wandb
-        wandb.log({
-            "train_loss": loss.item(),
-            "batch": batch_idx
-        })
+    # 计算损失
+    loss = criterion(logits.view(-1, logits.size(-1)), labels.view(-1))
     
-    elapsed_time = time.time() - start_time
-    avg_loss = total_loss / num_batches if num_batches > 0 else 0
+    # 反向传播
+    loss.backward()
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+    optimizer.step()
     
-    return avg_loss, elapsed_time
+    return loss.item()
 
 
-def evaluate(model, val_loader, criterion, device, max_steps=None):
-    """验证模型"""
+def evaluate(model, val_loader, criterion, device, num_steps=100):
+    """验证模型 - 执行固定数量的step，返回损失和困惑度"""
     model.eval()
     total_loss = 0.0
-    num_batches = 0
     
     with torch.no_grad():
-        pbar = tqdm(val_loader, desc="验证中")
-        for batch_idx, batch in enumerate(pbar):
-            if max_steps and batch_idx >= max_steps:
+        for step in range(num_steps):
+            try:
+                batch = next(iter(val_loader))
+            except StopIteration:
                 break
             
             input_ids = batch["input_ids"].to(device)
@@ -247,17 +200,11 @@ def evaluate(model, val_loader, criterion, device, max_steps=None):
             loss = criterion(logits.view(-1, logits.size(-1)), labels.view(-1))
             
             total_loss += loss.item()
-            num_batches += 1
-            
-            pbar.set_postfix(loss=loss.item())
-            
-            # 记录到wandb
-            wandb.log({
-                "val_loss": loss.item()
-            })
     
-    avg_loss = total_loss / num_batches if num_batches > 0 else 0
-    return avg_loss
+    avg_loss = total_loss / num_steps if num_steps > 0 else 0
+    # 困惑度 = exp(平均损失)
+    perplexity = torch.exp(torch.tensor(avg_loss)).item()
+    return avg_loss, perplexity
 
 
 def main():
@@ -268,37 +215,35 @@ def main():
     if not wandb_api_key:
         raise ValueError("WANDB_API_KEY未设置。请在环境变量中设置API密钥")
     wandb.login(key=wandb_api_key)
-    wandb.init(
-        project="nano-llm",
-        name="TinyStories-training",
-        config={
-            "d_model": 384,
-            "num_heads": 8,
-            "num_layers": 6,
-            "batch_size": 64,
-            "max_length": 512,
-            "learning_rate": 0.0001,
-            "num_epochs": 4,
-        }
-    )
-    
+
     # 超参数
     d_model = 384
     num_heads = 8
     num_layers = 6
-    num_epochs = 4
     learning_rate = 0.0001
     batch_size = 64
-    max_length = 512
+    max_length = 1024
+    max_steps = 70000  # 最大训练步数
+    validation_interval = 50000  # 每50000步进行一次验证和保存
+    
+    wandb.init(
+        project="nano-llm",
+        name="TinyStories-training-step-based",
+        config={
+            "d_model": d_model,
+            "num_heads": num_heads,
+            "num_layers": num_layers,
+            "batch_size": batch_size,
+            "max_length": max_length,
+            "learning_rate": learning_rate,
+            "max_steps": max_steps,
+            "validation_interval": validation_interval,
+        }
+    )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    # 对于调试，可以限制样本数量
-    num_samples_train = None  # 使用完整数据集
-    num_samples_val = None
-    max_steps_per_epoch = None  # 使用所有步骤
-    
     print("=" * 70)
-    print("NanoLLM 训练 - TinyStories数据集")
+    print("NanoLLM 训练 - TinyStories数据集 (基于Step)")
     print("=" * 70)
     
     # 加载分词器
@@ -329,7 +274,8 @@ def main():
     print(f"  批次大小: {batch_size}")
     print(f"  最大序列长度: {max_length}")
     print(f"  学习率: {learning_rate}")
-    print(f"  Epochs: {num_epochs}\n")
+    print(f"  最大训练步数: {max_steps:,}")
+    print(f"  验证间隔: 每 {validation_interval:,} 步\n")
     
     # 初始化模型
     print("\n初始化模型...")
@@ -362,8 +308,6 @@ def main():
         tokenizer,
         batch_size=batch_size,
         max_length=max_length,
-        num_samples_train=num_samples_train,
-        num_samples_val=num_samples_val,
         train_csv_path=train_csv_path,
         val_csv_path=val_csv_path,
         text_column="text"
@@ -373,61 +317,101 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     criterion = nn.CrossEntropyLoss()
     
-    # 训练循环
+    # 创建迭代器
+    train_iter = iter(train_loader)
+    
+    # 训练循环 - 基于step而非epoch
     print("\n" + "=" * 70)
     print("开始训练")
-    print("=" * 70)
+    print("=" * 70 + "\n")
     
     best_val_loss = float("inf")
+    best_val_perplexity = float("inf")
+    model.train()
+    start_time = time.time()
     
-    for epoch in range(num_epochs):
-        print(f"\nEpoch {epoch+1}/{num_epochs}")
-        print("-" * 70)
+    pbar = tqdm(total=max_steps, desc="训练进度")
+    
+    for step in range(max_steps):
+        try:
+            batch = next(train_iter)
+        except StopIteration:
+            # 数据集迭代完成，重新创建迭代器（无限随机采样）
+            train_iter = iter(train_loader)
+            batch = next(train_iter)
         
-        # 训练
-        train_loss, train_time = train_epoch(
-            model=model,
-            train_loader=train_loader,
-            optimizer=optimizer,
-            criterion=criterion,
-            device=device,
-            epoch=epoch,
-            max_steps=max_steps_per_epoch,
-        )
+        # 执行训练step
+        loss = train_step(model, batch, optimizer, criterion, device)
+        # 计算训练困惑度
+        train_perplexity = torch.exp(torch.tensor(loss)).item()
         
-        # 验证
-        val_loss = evaluate(
-            model=model,
-            val_loader=val_loader,
-            criterion=criterion,
-            device=device,
-            max_steps=10,
-        )
+        # 更新进度条
+        pbar.update(1)
+        pbar.set_postfix({"loss": f"{loss:.4f}", "ppl": f"{train_perplexity:.2f}"})
         
-        print(f"\nEpoch {epoch+1} 完成:")
-        print(f"  训练损失: {train_loss:.4f}")
-        print(f"  验证损失: {val_loss:.4f}")
-        print(f"  耗时: {train_time:.2f}秒")
-        
-        # 记录epoch级别的指标到wandb
+        # 记录到wandb
         wandb.log({
-            "epoch": epoch + 1,
-            "epoch_train_loss": train_loss,
-            "epoch_val_loss": val_loss,
-            "epoch_time": train_time
+            "train_loss": loss,
+            "train_perplexity": train_perplexity,
+            "step": step + 1
         })
         
-        # 保存最佳模型
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save(model.state_dict(), "best_model.pt")
-            print(f"  ✓ 保存最佳模型 (val_loss: {val_loss:.4f})")
+        # 验证和保存模型
+        if (step + 1) % validation_interval == 0:
+            elapsed_time = time.time() - start_time
+            steps_per_sec = (step + 1) / elapsed_time
             
-            # 上传最佳模型到wandb
-            wandb.save("best_model.pt")
+            print(f"\n✓ Step {step + 1:,}/{max_steps:,} | 耗时: {elapsed_time:.1f}s | 速度: {steps_per_sec:.2f} steps/s")
+            
+            # 验证
+            model.eval()
+            val_loss, val_perplexity = evaluate(
+                model=model,
+                val_loader=val_loader,
+                criterion=criterion,
+                device=device,
+                num_steps=100
+            )
+            model.train()
+            
+            print(f"  训练损失: {loss:.4f} | 困惑度: {train_perplexity:.2f}")
+            print(f"  验证损失: {val_loss:.4f} | 困惑度: {val_perplexity:.2f}")
+            
+            # 记录验证指标
+            wandb.log({
+                "val_loss": val_loss,
+                "val_perplexity": val_perplexity,
+                "step": step + 1,
+                "elapsed_time": elapsed_time,
+            })
+            
+            # 保存最佳模型
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_val_perplexity = val_perplexity
+                torch.save(model.state_dict(), "best_model.pt")
+                print(f"  ✓ 保存最佳模型 (val_loss: {val_loss:.4f} | val_ppl: {val_perplexity:.2f})")
+                wandb.save("best_model.pt")
+            
+            # 定期保存检查点
+            checkpoint_path = f"checkpoint_step_{step + 1}.pt"
+            torch.save({
+                "step": step + 1,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "val_loss": val_loss,
+            }, checkpoint_path)
+            print(f"  ✓ 保存检查点: {checkpoint_path}")
     
+    pbar.close()
+    
+    total_elapsed_time = time.time() - start_time
     print("\n" + "=" * 70)
     print("训练完成!")
+    print(f"总耗时: {total_elapsed_time:.1f}s")
+    print(f"平均速度: {max_steps / total_elapsed_time:.2f} steps/s")
+    print(f"最佳验证损失: {best_val_loss:.4f}")
+    print(f"最佳验证困惑度: {best_val_perplexity:.2f}")
     print("=" * 70)
     
     # 结束wandb记录
@@ -461,8 +445,6 @@ def main():
             )
         
         # 解码生成的文本 - 只使用生成部分的token IDs（跳过提示词部分）
-        # generated_ids 包含了原始提示词 + 新生成的部分
-        # 我们只解码新生成的部分，从原始长度开始
         generated_only_ids = generated_ids[0, prompt_ids.size(1):].tolist()
         generated_text = tokenizer.decode(generated_only_ids, skip_special_tokens=True)
         print(f"生成文本: {generated_text}")
