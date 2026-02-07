@@ -30,37 +30,39 @@ install:
 
 train:
 	@echo "Starting training..."
-	uv run train.py
+	uv run src/train.py
 
 infer:
 	@echo "Running inference..."
-	uv run inference.py
+	uv run src/inference.py
 
 test:
 	@echo "Running tests..."
-	uv run pytest test_*.py -v
+	uv run pytest src/test_*.py -v
 
 clean:
 	@echo "Cleaning generated files..."
 	rm -rf __pycache__ .pytest_cache *.pyc
 kinit:
 	@echo "Initializing Kaggle metadata..."
-	uv run kaggle kernels init -p kaggle
-	@echo "Metadata created: kaggle/kernel-metadata.json"
+	uv run kaggle kernels init -p kaggle/notebook
+	@echo "Metadata created: kaggle/notebook/kernel-metadata.json"
 
 kdataset:
+	@echo "Copying config.yaml to kaggle/secrets..."
+	cp config.yaml kaggle/secrets/config.yaml
 	@echo "Uploading secrets dataset to Kaggle..."
-	uv run kaggle datasets create -p my-secrets
+	uv run kaggle datasets create -p kaggle/secrets
 	@echo "Secrets dataset uploaded"
 
 kpush:
 	@echo "Pushing notebook to Kaggle..."
-	uv run kaggle kernels push -p kaggle
+	uv run kaggle kernels push -p kaggle/notebook
 	@echo "Notebook pushed to Kaggle"
 
 kpull:
 	@echo "Pulling notebook from Kaggle..."
-	uv run kaggle kernels pull team317/nano-llm -p ./kaggle -m
+	uv run kaggle kernels pull team317/nano-llm -p ./kaggle/notebook -m
 	@echo "Notebook pulled"
 
 kstatus:

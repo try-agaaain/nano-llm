@@ -12,3 +12,7 @@ dataset
 tokenizer
 **.pt
 wandb/
+
+# Configuration files with secrets
+config.yaml
+my-secrets/config.yaml

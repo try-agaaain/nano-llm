@@ -12,4 +12,6 @@ dependencies = [
     "huggingface-hub>=0.36.1",
     "kaggle>=1.7.4.5",
     "wandb>=0.24.2",
+    "torch>=2.8.0",
+    "pyyaml>=6.0",
 ]
