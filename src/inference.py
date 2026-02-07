@@ -1,13 +1,7 @@
-import os
 import torch
-import sys
 from pathlib import Path
 
-# 加载环境变量配置（默认使用kaggle模式）
-from src.utils.env_loader import load_secrets
-load_secrets(mode=os.getenv("CONFIG_MODE", "kaggle"))
-
-from model import NanoLLM
+from src.model import NanoLLM
 from src.tokenizer import load_or_train_tokenizer
 
 

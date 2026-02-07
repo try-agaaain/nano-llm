@@ -3,14 +3,10 @@
 import os
 import torch
 
-# 加载环境变量配置（默认使用kaggle模式）
-from src.utils.env_loader import load_secrets
-load_secrets(mode=os.getenv("CONFIG_MODE", "kaggle"))
 import wandb
-from pathlib import Path
 from typing import Optional
 from model import NanoLLM
-from tokenizer import load_or_train_tokenizer
+from src.tokenizer import load_or_train_tokenizer
 
 
 class InteractiveModelTester:
