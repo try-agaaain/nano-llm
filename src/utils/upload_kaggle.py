@@ -54,7 +54,7 @@ def main():
     """上传secrets数据集和notebook到Kaggle"""
     # 加载环境变量（本地模式）
     try:
-        load_secrets(mode="local")
+        load_secrets()
     except ValueError as e:
         print(f"加载配置失败: {e}")
         sys.exit(1)
