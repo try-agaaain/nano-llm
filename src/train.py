@@ -5,7 +5,7 @@ import random
 import torch
 
 # 加载环境变量配置（默认使用kaggle模式）
-from env_loader import load_secrets
+from src.utils.env_loader import load_secrets
 load_secrets(mode=os.getenv("CONFIG_MODE", "kaggle"))
 import torch.nn as nn
 import torch.optim as optim
@@ -14,7 +14,7 @@ import time
 from tqdm import tqdm
 import wandb
 from model import NanoLLM
-from tokenizer import load_or_train_tokenizer
+from src.tokenizer import load_or_train_tokenizer
 from dataset import TinyStoriesDataset
 
 

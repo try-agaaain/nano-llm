@@ -4,7 +4,7 @@ import os
 import torch
 
 # 加载环境变量配置（默认使用kaggle模式）
-from env_loader import load_secrets
+from src.utils.env_loader import load_secrets
 load_secrets(mode=os.getenv("CONFIG_MODE", "kaggle"))
 import wandb
 from pathlib import Path

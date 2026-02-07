@@ -8,7 +8,7 @@ from typing import Optional
 
 from transformers import PreTrainedTokenizerFast
 from tokenizers import Tokenizer, models, trainers, pre_tokenizers, decoders
-from dataset import create_training_file_from_csv
+from src.dataset import create_training_file_from_csv
 
 
 class TinyStoriesTokenizerFast(PreTrainedTokenizerFast):
