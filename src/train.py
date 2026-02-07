@@ -184,7 +184,6 @@ def main():
         vocab_size=8192,
         num_samples=50000,
         force_retrain=False,  # 改为False，只在需要时重新训练
-        dataset_dir="./dataset",
         csv_path=csv_path_for_tokenizer,
         text_column="text"
     )

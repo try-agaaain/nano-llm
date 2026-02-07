@@ -188,7 +188,6 @@ class InteractiveModelTester:
                 vocab_size=8192,
                 num_samples=50000,
                 force_retrain=False,
-                dataset_dir="./dataset",
                 csv_path=None,
                 text_column="text"
             )
