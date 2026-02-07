@@ -1,6 +1,12 @@
 # nano-llm Makefile
 .DEFAULT_GOAL := help
 
+ifeq ($(OS),Windows_NT)
+	CP = powershell -NoProfile -Command "Copy-Item -Force"
+else
+	CP = cp
+endif
+
 help:
 	@echo "NanoLLM Makefile Commands:"
 	@echo ""
@@ -11,8 +17,7 @@ help:
 	@echo ""
 	@echo "  Kaggle:"
 	@echo "  make kinit        Init Kaggle metadata"
-	@echo "  make kdataset     Upload secrets dataset"
-	@echo "  make kpush        Push notebook to Kaggle"
+	@echo "  make kpush        Upload secrets & push notebook to Kaggle"
 	@echo "  make kpull        Pull notebook from Kaggle"
 	@echo "  make kstatus      Check notebook status"
 	@echo "  make koutput      Get notebook output"
@@ -48,17 +53,11 @@ kinit:
 	uv run kaggle kernels init -p kaggle/notebook
 	@echo "Metadata created: kaggle/notebook/kernel-metadata.json"
 
-kdataset:
-	@echo "Copying config.yaml to kaggle/secrets..."
-	cp config.yaml kaggle/secrets/config.yaml
-	@echo "Uploading secrets dataset to Kaggle..."
-	uv run kaggle datasets create -p kaggle/secrets
-	@echo "Secrets dataset uploaded"
-
 kpush:
-	@echo "Pushing notebook to Kaggle..."
-	uv run kaggle kernels push -p kaggle/notebook
-	@echo "Notebook pushed to Kaggle"
+	@echo "Copying config.yaml to kaggle/secrets..."
+	$(CP) config.yaml kaggle/secrets/config.yaml
+	@echo "Uploading secrets & pushing notebook to Kaggle..."
+	uv run -m src.utils.upload_kaggle
 
 kpull:
 	@echo "Pulling notebook from Kaggle..."
@@ -72,4 +71,3 @@ kstatus:
 koutput:
 	@echo "Getting notebook output..."
 	mkdir -p kaggle/output
-	pythonlp setup install train infer test clean kinit kdataset kpush kpull kstatus koutput
