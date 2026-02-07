@@ -1,21 +1,17 @@
 """模型训练脚本 - 使用TinyStories数据集"""
 
 import os
-import random
 import torch
-
-# 加载环境变量配置（默认使用kaggle模式）
-from src.utils.env_loader import load_secrets
-load_secrets(mode=os.getenv("CONFIG_MODE", "kaggle"))
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import time
 from tqdm import tqdm
 import wandb
-from model import NanoLLM
+
+from src.model import NanoLLM
 from src.tokenizer import load_or_train_tokenizer
-from dataset import TinyStoriesDataset
+from src.dataset import TinyStoriesDataset
 
 
 def create_data_loaders(
