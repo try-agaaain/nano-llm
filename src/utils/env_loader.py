@@ -12,7 +12,7 @@ def load_secrets(mode: Literal["kaggle", "local"] = "kaggle") -> None:
     
     Args:
         mode: 加载模式
-            - "kaggle": 从Kaggle secrets或/kaggle/input/my-secrets/config.yaml加载（默认）
+            - "kaggle": 从Kaggle secrets或/kaggle/input/secrets/config.yaml加载（默认）
             - "local": 从项目目录下的config.yaml加载
     
     Raises:
@@ -21,48 +21,27 @@ def load_secrets(mode: Literal["kaggle", "local"] = "kaggle") -> None:
     config = {}
     
     if mode == "kaggle":
-        # Kaggle模式：优先尝试Kaggle UserSecrets，然后回退到config.yaml
-        print(f"[INFO] 使用Kaggle模式加载配置...")
-        
-        # 尝试从Kaggle UserSecrets加载
-        try:
-            from kaggle_secrets import UserSecretsClient
-            user_secrets = UserSecretsClient()
-            
-            # 尝试获取每个secret
-            for key in ['HF_TOKEN', 'WANDB_API_KEY', 'KAGGLE_API_TOKEN']:
-                try:
-                    secret = user_secrets.get_secret(key)
-                    if secret:
-                        config[key] = secret
-                        print(f"[OK] {key} 从Kaggle Secrets加载成功")
-                except Exception:
-                    pass
-        except Exception as e:
-            print(f"[WARN] 无法访问Kaggle Secrets: {e}")
-        
-        # 如果没有从UserSecrets获取到配置，尝试从config.yaml加载
-        if not config:
-            config_path = Path("/kaggle/input/my-secrets/config.yaml")
-            if config_path.exists():
-                try:
-                    with open(config_path) as f:
-                        config = yaml.safe_load(f) or {}
-                    print(f"[OK] 配置从 {config_path} 加载成功")
-                except Exception as e:
-                    raise ValueError(f"无法从 {config_path} 加载配置: {e}")
-            else:
-                raise ValueError(
-                    f"Kaggle模式下配置文件不存在: {config_path}\n"
-                    "请确保已上传my-secrets数据集到Kaggle"
-                )
+        print(os.listdir("/kaggle/input"))
+        config_path = Path("/kaggle/input/secrets/config.yaml")
+        if config_path.exists():
+            try:
+                with open(config_path) as f:
+                    config = yaml.safe_load(f) or {}
+                print(f"[OK] 配置从 {config_path} 加载成功")
+            except Exception as e:
+                raise ValueError(f"无法从 {config_path} 加载配置: {e}")
+        else:
+            raise ValueError(
+                f"Kaggle模式下配置文件不存在: {config_path}\n"
+                "请确保已上传secrets数据集到Kaggle"
+            )
     
     elif mode == "local":
         # 本地模式：从项目目录的config.yaml加载
         print(f"[INFO] 使用本地模式加载配置...")
         
         # 获取项目根目录（当前文件所在目录）
-        project_root = Path(__file__).parent
+        project_root = Path(__file__).parent.parent.parent
         config_path = project_root / "config.yaml"
         
         if not config_path.exists():
