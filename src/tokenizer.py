@@ -5,10 +5,11 @@ TinyStories 自定义分词器 - 基于 BPE 算法，针对 TinyStories 数据�
 import os
 from pathlib import Path
 from typing import Optional
+import tempfile
 
 from transformers import PreTrainedTokenizerFast
 from tokenizers import Tokenizer, models, trainers, pre_tokenizers, decoders
-from src.dataset import create_training_file_from_csv
+from src.dataset import TinyStoriesDataset
 
 
 class TinyStoriesTokenizerFast(PreTrainedTokenizerFast):
@@ -69,32 +70,27 @@ class TinyStoriesTokenizerFast(PreTrainedTokenizerFast):
         return tokenizer
 
 
-def train_tokenizer_from_tinystories(
+def train_tokenizer_from_dataset(
     save_path: str,
+    dataset,
     vocab_size: int = 8192,
     num_samples: int = 50000,
-    csv_path: str = None,
-    text_column: str = "text",
 ) -> TinyStoriesTokenizerFast:
     """
-    从 CSV 文件训练 BPE 分词器
+    从数据集训练 BPE 分词器
     
     Args:
         save_path: 保存路径
+        dataset: BaseDataset 实例
         vocab_size: 词表大小（默认 8192）
         num_samples: 用于训练分词器的样本数量（默认 50000）
-        csv_path: CSV 文件路径（必须提供）
-        text_column: CSV 中文本列的名称（默认 "text"）
     
     Returns:
         TinyStoriesTokenizerFast: 训练后的 tokenizer
     """
-    print(f"📚 从 TinyStories 数据集训练分词器...")
+    print(f"📚 从数据集训练分词器...")
     print(f"   词表大小: {vocab_size}")
     print(f"   训练样本数: {num_samples}")
-    
-    if not csv_path or not os.path.exists(csv_path):
-        raise ValueError(f"必须提供有效的CSV文件路径: {csv_path}")
     
     # 1. 初始化 BPE Tokenizer
     tokenizer = Tokenizer(models.BPE(unk_token="<unk>"))
@@ -108,19 +104,18 @@ def train_tokenizer_from_tinystories(
         vocab_size=vocab_size,
         special_tokens=special_tokens,
         show_progress=True,
-        min_frequency=2,  # 最小出现频率
+        min_frequency=2,
     )
     
-    # 3. 创建训练文件
+    # 3. 从数据集获取文本并创建临时训练文件
     print("   正在准备训练数据...")
-    train_file_path = os.path.join(save_path, "tokenizer_train.txt")
     Path(save_path).mkdir(parents=True, exist_ok=True)
-    create_training_file_from_csv(
-        csv_path=csv_path,
-        output_path=train_file_path,
-        text_column=text_column,
-        num_samples=num_samples,
-    )
+    
+    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False, suffix='.txt') as f:
+        train_file_path = f.name
+        texts = dataset.get_texts(num_samples=num_samples)
+        for text in texts:
+            f.write(text + "\n\n")
     
     try:
         # 4. 训练分词器
@@ -129,9 +124,7 @@ def train_tokenizer_from_tinystories(
             files=[train_file_path],
             trainer=trainer
         )
-        
         print(f"   ✅ 训练完成 (词表大小: {tokenizer.get_vocab_size()})")
-        
     finally:
         # 清理临时文件
         if os.path.exists(train_file_path):
@@ -154,22 +147,20 @@ def train_tokenizer_from_tinystories(
 
 def load_or_train_tokenizer(
     tokenizer_path: Optional[str] = None,
+    dataset=None,
     vocab_size: int = 8192,
     num_samples: int = 50000,
     force_retrain: bool = False,
-    csv_path: Optional[str] = None,
-    text_column: str = "text",
 ) -> TinyStoriesTokenizerFast:
     """
     加载已存在的分词器，如果不存在则训练新的
     
     Args:
         tokenizer_path: 分词器保存路径（如果为 None，使用默认路径）
+        dataset: BaseDataset 实例（训练时必须提供）
         vocab_size: 词表大小（仅在训练时使用）
         num_samples: 训练样本数（仅在训练时使用）
         force_retrain: 是否强制重新训练
-        csv_path: CSV 文件路径（训练时必须提供）
-        text_column: CSV 中文本列的名称（默认 "text"）
     
     Returns:
         TinyStoriesTokenizerFast: 分词器实例
@@ -185,55 +176,64 @@ def load_or_train_tokenizer(
         print(f"📖 加载已存在的分词器: {tokenizer_path}")
         return TinyStoriesTokenizerFast.from_pretrained(str(tokenizer_path))
     else:
+        if dataset is None:
+            raise ValueError("训练分词器时必须提供 dataset 参数")
         print(f"🔨 训练新的分词器...")
-        return train_tokenizer_from_tinystories(
+        return train_tokenizer_from_dataset(
             save_path=str(tokenizer_path),
+            dataset=dataset,
             vocab_size=vocab_size,
             num_samples=num_samples,
-            csv_path=csv_path,
-            text_column=text_column,
         )
 
 if __name__ == "__main__":
-    # 示例：需要提供CSV文件路径
-    csv_path = "path/to/your/data.csv"  # 请替换为实际路径
+    # 示例：需要提供数据集目录
+    from src.dataset import TinyStoriesDataset
     
-    tokenizer = load_or_train_tokenizer(
-        tokenizer_path="./tokenizer",
-        vocab_size=8192,
-        num_samples=10000,
-        force_retrain=True,
-        csv_path=csv_path,
-    )
-    print(f"✅ 分词器词表大小: {tokenizer.vocab_size}")
+    data_dir = "path/to/tinystories/dataset"  # 请替换为实际路径
     
-    # 测试编解码是否正常
-    print("\n" + "="*70)
-    print("编解码测试")
-    print("="*70)
-    
-    test_texts = [
-        "Hello world",
-        "The little girl",
-        "In the forest",
-        "Once upon a time there was a beautiful day",
-    ]
-    
-    for text in test_texts:
-        print(f"\n原始文本: {text}")
+    try:
+        dataset = TinyStoriesDataset(data_dir)
         
-        # 编码
-        encoded = tokenizer.encode(text, return_tensors="pt")
-        token_ids = encoded[0].tolist()
-        print(f"Token IDs: {token_ids}")
+        tokenizer = load_or_train_tokenizer(
+            tokenizer_path="./tokenizer",
+            dataset=dataset,
+            vocab_size=8192,
+            num_samples=10000,
+            force_retrain=True,
+        )
+        print(f"✅ 分词器词表大小: {tokenizer.vocab_size}")
         
-        # 解码
-        decoded = tokenizer.decode(token_ids, skip_special_tokens=True)
-        print(f"解码文本: {decoded}")
+        # 测试编解码是否正常
+        print("\n" + "="*70)
+        print("编解码测试")
+        print("="*70)
         
-        # 检查是否有Ġ符号
-        has_symbols = "Ġ" in decoded or "Ċ" in decoded
-        status = "❌ 有乱码符号" if has_symbols else "✅ 正常"
-        print(f"状态: {status}")
-    
-    print("\n" + "="*70)
+        test_texts = [
+            "Hello world",
+            "The little girl",
+            "In the forest",
+            "Once upon a time there was a beautiful day",
+        ]
+        
+        for text in test_texts:
+            print(f"\n原始文本: {text}")
+            
+            # 编码
+            encoded = tokenizer.encode(text, return_tensors="pt")
+            token_ids = encoded[0].tolist()
+            print(f"Token IDs: {token_ids}")
+            
+            # 解码
+            decoded = tokenizer.decode(token_ids, skip_special_tokens=True)
+            print(f"解码文本: {decoded}")
+            
+            # 检查是否有Ġ符号
+            has_symbols = "Ġ" in decoded or "Ċ" in decoded
+            status = "❌ 有乱码符号" if has_symbols else "✅ 正常"
+            print(f"状态: {status}")
+        
+        print("\n" + "="*70)
+    except ValueError as e:
+        print(f"❌ 错误: {e}")
+        print("   请提供有效的数据集目录路径")
