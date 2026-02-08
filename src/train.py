@@ -15,30 +15,30 @@ from src.dataset import TinyStoriesDataset
 
 
 def create_data_loaders(
-    tokenizer, 
+    dataset, 
+    tokenizer,
     batch_size=32, 
     max_length=512,
-    train_csv_path=None,
-    val_csv_path=None,
-    text_column="text",
 ):
     """创建训练和验证数据加载器"""
+    from src.dataset import TokenizedDataset
     
-    train_dataset = TinyStoriesDataset(
+    # 训练数据集
+    train_dataset = TokenizedDataset(
+        dataset=dataset,
         tokenizer=tokenizer,
-        csv_path=train_csv_path,
         max_length=max_length,
-        text_column=text_column,
-    )
-    
-    val_dataset = TinyStoriesDataset(
-        tokenizer=tokenizer,
-        csv_path=val_csv_path,
-        max_length=max_length,
-        text_column=text_column,
     )
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size)
+    
+    # 验证数据集（同一个数据集，无限迭代）
+    val_dataset = TokenizedDataset(
+        dataset=dataset,
+        tokenizer=tokenizer,
+        max_length=max_length,
+    )
+    
     val_loader = DataLoader(val_dataset, batch_size=batch_size)
     
     return train_loader, val_loader
@@ -175,17 +175,19 @@ def main():
     # 加载分词器
     print("正在加载TinyStories分词器...")
     
-    # 检查 Kaggle CSV 路径
-    train_csv_path = "/kaggle/input/tinystories-narrative-classification/train.csv"
-    csv_path_for_tokenizer = train_csv_path if os.path.exists(train_csv_path) else None
+    # 检查数据集目录
+    dataset_dir = "/kaggle/input/tinystories-narrative-classification"
+    if not os.path.exists(dataset_dir):
+        raise ValueError(f"TinyStories数据集目录不存在: {dataset_dir}")
+    
+    dataset = TinyStoriesDataset(dataset_dir)
     
     tokenizer = load_or_train_tokenizer(
         tokenizer_path="./tokenizer",
+        dataset=dataset,
         vocab_size=8192,
         num_samples=50000,
-        force_retrain=False,  # 改为False，只在需要时重新训练
-        csv_path=csv_path_for_tokenizer,
-        text_column="text"
+        force_retrain=False,
     )
     vocab_size = tokenizer.vocab_size
     print(f"分词器词汇表大小: {vocab_size}")
@@ -219,22 +221,11 @@ def main():
     # 创建数据加载器
     print("\n创建数据加载器...")
     
-    # CSV 文件路径
-    train_csv_path = "/kaggle/input/tinystories-narrative-classification/train.csv"
-    val_csv_path = "/kaggle/input/tinystories-narrative-classification/validation.csv"
-    
-    if not os.path.exists(train_csv_path):
-        raise ValueError(f"训练数据CSV文件不存在: {train_csv_path}")
-    if not os.path.exists(val_csv_path):
-        raise ValueError(f"验证数据CSV文件不存在: {val_csv_path}")
-    
     train_loader, val_loader = create_data_loaders(
-        tokenizer,
+        dataset=dataset,
+        tokenizer=tokenizer,
         batch_size=batch_size,
         max_length=max_length,
-        train_csv_path=train_csv_path,
-        val_csv_path=val_csv_path,
-        text_column="text"
     )
     
     # 优化器和损失函数

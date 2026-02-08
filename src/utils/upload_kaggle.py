@@ -8,9 +8,9 @@ from pathlib import Path
 from src.utils.env_loader import load_secrets
 
 
-def upload_secrets():
+def upload_secrets(path: str="kaggle/secrets"):
     """上传secrets数据集到Kaggle"""
-    secrets_dir = Path('kaggle/secrets')
+    secrets_dir = Path(path)
     if not secrets_dir.exists():
         print(f"错误: {secrets_dir} 目录不存在")
         return False
@@ -37,7 +37,7 @@ def upload_notebook():
         return False
 
     print(f"正在推送notebook到Kaggle...")
-    cmd = ['kaggle', 'kernels', 'push', '-p', str(notebook_dir)]
+    cmd = ['kaggle', 'kernels', 'push', '-p', str(notebook_dir), '--accelerator', 'NvidiaTeslaT4']
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode != 0:

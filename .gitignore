@@ -8,11 +8,11 @@ wheels/
 
 # Virtual environments
 .venv
-dataset
-tokenizer
+/dataset/
+tokenizer/
 **.pt
 wandb/
 
 # Configuration files with secrets
 config.yaml
-my-secrets/config.yaml
+kaggle/secrets/config.yaml
