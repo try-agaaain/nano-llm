@@ -4,6 +4,7 @@ import subprocess
 import sys
 import json
 import yaml
+import shutil
 from pathlib import Path
 
 # 导入env_loader模块来加载环境变量
@@ -67,13 +68,27 @@ def upload_notebook():
     """推送notebook到Kaggle"""
     notebook_dir = Path('kaggle/notebook')
     if not notebook_dir.exists():
-        print(f"错误: {notebook_dir} 目录不存在")
-        return False
-
+        notebook_dir.mkdir(parents=True, exist_ok=True)
+    
     # 生成kernel-metadata.json
     config = _load_config()
     username = config.get("kaggle", {}).get("username", "")
     notebook_meta = config.get("kaggle", {}).get("notebook", {})
+    
+    # 从config中获取code_file路径（如src/notebook.ipynb）
+    code_file_path = notebook_meta.get("code_file", "")
+    
+    # 复制notebook文件到kaggle/notebook目录
+    source_notebook = Path(code_file_path)
+    filename = source_notebook.name
+    target_notebook = notebook_dir / filename
+    
+    if not source_notebook.exists():
+        print(f"错误: {source_notebook} 不存在")
+        return False
+    shutil.copy2(source_notebook, target_notebook)
+    
+    notebook_meta["code_file"] = filename
     if notebook_meta and not _generate_metadata_file(notebook_dir, notebook_meta, "kernel-metadata.json", username):
         return False
 

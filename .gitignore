@@ -15,4 +15,4 @@ wandb/
 
 # Configuration files with secrets
 config.yaml
-kaggle/secrets/config.yaml
+kaggle
