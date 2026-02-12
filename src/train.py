@@ -133,7 +133,7 @@ def evaluate(model, val_loader, criterion, device, num_steps=100, tokenizer=None
     return avg_loss, perplexity
 
 
-def main():
+def train(dataset_dir: str):
     """主训练函数"""
     
     # 初始化wandb
@@ -147,9 +147,9 @@ def main():
     num_heads = 8
     num_layers = 8
     learning_rate = 0.0001
-    batch_size = 32
+    batch_size = 16
     max_length = 1024
-    max_steps = 10000  # 最大训练步数
+    max_steps = 20000  # 最大训练步数
     validation_interval = 1000
     
     wandb.init(
@@ -176,7 +176,6 @@ def main():
     print("正在加载TinyStories分词器...")
     
     # 检查数据集目录
-    dataset_dir = "/kaggle/input/tinystories-narrative-classification"
     if not os.path.exists(dataset_dir):
         raise ValueError(f"TinyStories数据集目录不存在: {dataset_dir}")
     
@@ -370,5 +369,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    from pathlib import Path
+    workspace_dir = Path(__file__).parent.parent
+    dataset_dir = workspace_dir / "dataset" / "tinystories-narrative-classification"
+    train(dataset_dir)
 

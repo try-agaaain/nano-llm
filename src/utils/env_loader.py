@@ -36,10 +36,11 @@ def load_secrets() -> None:
     if not config:
         raise ValueError("未能加载任何配置")
     
-    for key, value in config.items():
+    for key, value in config['secrets'].items():
         if value:
             os.environ[key] = str(value)
             print(f"[OK] {key} 已设置为环境变量")
     
-    print(f"[INFO] 共设置 {len(config)} 个环境变量")
+    print(f"[INFO] 共设置 {len(config['secrets'])} 个环境变量")
     print("=" * 70)
+
