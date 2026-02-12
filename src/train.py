@@ -86,12 +86,12 @@ def train(dataset_dir: str):
     
     # 加载数据和分词器
     print(f"Loading dataset from {dataset_dir}")
-    dataset = TinyStoriesDataset(dataset_dir)
+    train_dataset_raw, val_dataset_raw = TinyStoriesDataset.load_datasets(dataset_dir)
     
     print("Loading tokenizer...")
     tokenizer = load_or_train_tokenizer(
         tokenizer_path="./tokenizer",
-        dataset=dataset,
+        dataset=train_dataset_raw,  # 使用训练集训练分词器
         vocab_size=8192,
         num_samples=50000,
         force_retrain=False,
@@ -100,8 +100,8 @@ def train(dataset_dir: str):
     print(f"Vocab size: {tokenizer.vocab_size} | Device: {device}")
     
     # 创建数据加载器
-    train_dataset = TokenizedDataset(dataset, tokenizer, max_length)
-    val_dataset = TokenizedDataset(dataset, tokenizer, max_length)
+    train_dataset = TokenizedDataset(train_dataset_raw, tokenizer, max_length)
+    val_dataset = TokenizedDataset(val_dataset_raw, tokenizer, max_length)
     train_loader = DataLoader(train_dataset, batch_size=batch_size)
     val_loader = DataLoader(val_dataset, batch_size=batch_size)
     
