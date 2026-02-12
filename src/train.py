@@ -51,8 +51,11 @@ def evaluate(model, val_loader, criterion, device, num_steps=100):
     return avg_loss, perplexity
 
 
-def train(dataset_dir: str):
+def train(dataset_dir: str, output_dir: str = "./output"):
     """主训练函数"""
+    from pathlib import Path
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
     
     # 配置
     d_model = 384
@@ -71,6 +74,7 @@ def train(dataset_dir: str):
         wandb.init(
             project="nano-llm",
             name="TinyStories-training",
+            dir=str(output_path / "wandb"),
             config={
                 "d_model": d_model,
                 "num_heads": num_heads,
@@ -89,8 +93,9 @@ def train(dataset_dir: str):
     train_dataset_raw, val_dataset_raw = TinyStoriesDataset.load_datasets(dataset_dir)
     
     print("Loading tokenizer...")
+    tokenizer_path = output_path / "tokenizer"
     tokenizer = load_or_train_tokenizer(
-        tokenizer_path="./tokenizer",
+        tokenizer_path=str(tokenizer_path),
         dataset=train_dataset_raw,  # 使用训练集训练分词器
         vocab_size=8192,
         num_samples=50000,
@@ -159,16 +164,18 @@ def train(dataset_dir: str):
             
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
-                torch.save(model.state_dict(), "best_model.pt")
+                model_save_path = output_path / "best_model.pt"
+                torch.save(model.state_dict(), str(model_save_path))
                 print(f"✓ Saved best model (val_loss: {val_loss:.4f})")
             
             # 保存检查点
+            checkpoint_path = output_path / f"checkpoint_step_{step + 1}.pt"
             torch.save({
                 "step": step + 1,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "val_loss": val_loss,
-            }, f"checkpoint_step_{step + 1}.pt")
+            }, str(checkpoint_path))
     
     pbar.close()
     

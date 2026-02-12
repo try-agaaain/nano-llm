@@ -21,7 +21,7 @@ TEST_PROMPTS = [
 ]
 
 
-def load_model(model_path="best_model.pt", device=None):
+def load_model(model_path="output/best_model.pt", device=None):
     """加载模型"""
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

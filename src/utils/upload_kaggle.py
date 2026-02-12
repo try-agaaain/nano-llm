@@ -36,7 +36,7 @@ def _generate_metadata_file(metadata_dir: Path, metadata: dict, filename: str, u
         return False
 
 
-def upload_secrets(path: str="kaggle/secrets"):
+def upload_secrets(path: str="output/kaggle/secrets"):
     """上传secrets数据集到Kaggle"""
     secrets_dir = Path(path)
     if not secrets_dir.exists():
@@ -66,7 +66,7 @@ def upload_secrets(path: str="kaggle/secrets"):
 
 def upload_notebook():
     """推送notebook到Kaggle"""
-    notebook_dir = Path('kaggle/notebook')
+    notebook_dir = Path('output/kaggle/notebook')
     if not notebook_dir.exists():
         notebook_dir.mkdir(parents=True, exist_ok=True)
     
@@ -89,6 +89,13 @@ def upload_notebook():
     shutil.copy2(source_notebook, target_notebook)
     
     notebook_meta["code_file"] = filename
+    
+    # 添加secrets
+    dataset_sources = notebook_meta.get("dataset_sources", [])
+    secrets_source = f"{username}/secrets"
+    dataset_sources.append(secrets_source)
+    notebook_meta["dataset_sources"] = dataset_sources
+
     if notebook_meta and not _generate_metadata_file(notebook_dir, notebook_meta, "kernel-metadata.json", username):
         return False
 

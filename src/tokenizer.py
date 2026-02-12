@@ -88,15 +88,13 @@ def train_tokenizer_from_dataset(
 
 
 def load_or_train_tokenizer(
-    tokenizer_path: Optional[str] = None,
+    tokenizer_path: Optional[str] = "./output/tokenizer",
     dataset=None,
     vocab_size: int = 8192,
     num_samples: int = 50000,
     force_retrain: bool = False,
 ) -> TinyStoriesTokenizerFast:
     """加载或训练分词器"""
-    if tokenizer_path is None:
-        tokenizer_path = "./tokenizer"
     
     tokenizer_path = Path(tokenizer_path)
     tokenizer_json = tokenizer_path / "tokenizer.json"
@@ -123,7 +121,6 @@ if __name__ == "__main__":
     dataset = TinyStoriesDataset(data_dir)
     
     tokenizer = load_or_train_tokenizer(
-        tokenizer_path="./tokenizer",
         dataset=dataset,
         vocab_size=8192,
         num_samples=10000,
