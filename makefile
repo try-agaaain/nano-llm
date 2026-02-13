@@ -47,8 +47,6 @@ kinit:
 	uv run -m src.utils.kaggle_utils init
 
 kpush:
-	@echo "Copying config.yaml to output/kaggle/secrets..."
-	$(CP) config.yaml output/kaggle/secrets/config.yaml
 	@echo "Uploading secrets & pushing notebook to Kaggle..."
 	uv run -m src.utils.kaggle_utils push
 

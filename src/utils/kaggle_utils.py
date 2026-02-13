@@ -8,8 +8,8 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-# 导入env_loader模块来加载环境变量
 from src.utils.env_loader import load_secrets
+from src.utils.file_collector import FileCollector
 
 
 class KaggleManager:
@@ -90,10 +90,30 @@ class KaggleManager:
     
     def upload_secrets(self) -> bool:
         """上传secrets数据集到Kaggle（kpush的一部分）"""
+        # 清理并重建目录
+        if self.secrets_dir.exists():
+            shutil.rmtree(self.secrets_dir)
         self.secrets_dir.mkdir(parents=True, exist_ok=True)
         
+        # 使用FileCollector收集文件
+        collector = FileCollector()
+        dataset_config = self.kaggle_config.get("dataset", {})
+        
+        # 解析排除模式
+        ignore_patterns_file = dataset_config.get("ignore_patterns", ".gitignore")
+        patterns_file = collector.root / ignore_patterns_file
+        exclude_patterns = collector.parse_exclude_patterns(patterns_file)
+        
+        # 收集文件
+        required_files = dataset_config.get("required_files", [])
+        all_files = collector.collect_files(exclude_patterns, required_files)
+        collector.copy_files(all_files, self.secrets_dir)
+        
         # 生成dataset-metadata.json
-        dataset_meta = self.kaggle_config.get("dataset", {})
+        dataset_meta = dataset_config.copy()
+        dataset_meta.pop("ignore_patterns", None)
+        dataset_meta.pop("required_files", None)
+        
         if dataset_meta and not self._generate_metadata_file(self.secrets_dir, dataset_meta, "dataset-metadata.json"):
             return False
         
@@ -193,25 +213,21 @@ def main():
         print(f"初始化失败: {e}")
         sys.exit(1)
     
-    try:
-        if command == "init":
-            success = manager.init_metadata()
-        elif command == "push":
-            success = manager.push()
-        elif command == "pull":
-            success = manager.pull()
-        elif command == "status":
-            success = manager.status()
-        elif command == "output":
-            success = manager.output()
-        else:
-            print(f"未知命令: {command}")
-            sys.exit(1)
-        
-        sys.exit(0 if success else 1)
-    except Exception as e:
-        print(f"执行失败: {e}")
+    if command == "init":
+        success = manager.init_metadata()
+    elif command == "push":
+        success = manager.push()
+    elif command == "pull":
+        success = manager.pull()
+    elif command == "status":
+        success = manager.status()
+    elif command == "output":
+        success = manager.output()
+    else:
+        print(f"未知命令: {command}")
         sys.exit(1)
+    
+    sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":
