@@ -22,6 +22,7 @@ help:
 	@echo "  make kstatus      Check notebook status"
 	@echo "  make koutput      Get notebook output"
 	@echo ""
+
 setup:
 	@echo "Setting up uv run virtual environment..."
 	uv run venv .venv
@@ -41,33 +42,24 @@ infer:
 	@echo "Running inference..."
 	uv run src/inference.py
 
-test:
-	@echo "Running tests..."
-	uv run pytest src/test_*.py -v
-
-clean:
-	@echo "Cleaning generated files..."
-	rm -rf __pycache__ .pytest_cache *.pyc
 kinit:
 	@echo "Initializing Kaggle metadata..."
-	uv run kaggle kernels init -p kaggle/notebook
-	@echo "Metadata created: kaggle/notebook/kernel-metadata.json"
+	uv run -m src.utils.kaggle_utils init
 
 kpush:
-	@echo "Copying config.yaml to kaggle/secrets..."
-	$(CP) config.yaml kaggle/secrets/config.yaml
+	@echo "Copying config.yaml to output/kaggle/secrets..."
+	$(CP) config.yaml output/kaggle/secrets/config.yaml
 	@echo "Uploading secrets & pushing notebook to Kaggle..."
-	uv run -m src.utils.upload_kaggle
+	uv run -m src.utils.kaggle_utils push
 
 kpull:
 	@echo "Pulling notebook from Kaggle..."
-	uv run kaggle kernels pull team317/nano-llm -p ./kaggle/notebook -m
-	@echo "Notebook pulled"
+	uv run -m src.utils.kaggle_utils pull
 
 kstatus:
 	@echo "Checking notebook status..."
-	uv run -m kaggle kernels status team317/nano-llm
+	uv run -m src.utils.kaggle_utils status
 
 koutput:
 	@echo "Getting notebook output..."
-	mkdir -p kaggle/output
+	uv run -m src.utils.kaggle_utils output

@@ -31,7 +31,7 @@ class PositionalEncoding(nn.Module):
 class TransformerBlock(nn.Module):
     """Transformer编码块"""
     
-    def __init__(self, d_model: int, num_heads: int, d_ff: int, dropout: float = 0.1):
+    def __init__(self, d_model: int, num_heads: int, ff_dim: int, dropout: float = 0.1):
         super().__init__()
         
         self.self_attn = nn.MultiheadAttention(
@@ -44,9 +44,9 @@ class TransformerBlock(nn.Module):
         self.norm1 = nn.LayerNorm(d_model)
         
         self.ffn = nn.Sequential(
-            nn.Linear(d_model, d_ff),
+            nn.Linear(d_model, ff_dim),
             nn.GELU(),
-            nn.Linear(d_ff, d_model),
+            nn.Linear(ff_dim, d_model),
         )
         self.dropout2 = nn.Dropout(dropout)
         self.norm2 = nn.LayerNorm(d_model)
@@ -70,7 +70,7 @@ class NanoLLM(nn.Module):
         d_model: int = 256,
         num_heads: int = 8,
         num_layers: int = 4,
-        d_ff: int = 1024,
+        ff_dim: int = 1024,
         max_seq_len: int = 512,
         dropout: float = 0.1,
     ):
@@ -81,7 +81,7 @@ class NanoLLM(nn.Module):
         self.pos_encoding = PositionalEncoding(d_model, max_seq_len, dropout)
         
         self.transformer_layers = nn.ModuleList([
-            TransformerBlock(d_model, num_heads, d_ff, dropout)
+            TransformerBlock(d_model, num_heads, ff_dim, dropout)
             for _ in range(num_layers)
         ])
         

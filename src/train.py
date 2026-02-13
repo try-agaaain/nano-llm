@@ -1,10 +1,12 @@
 """模型训练脚本"""
 
 import os
+import yaml
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from pathlib import Path
 import time
 from tqdm import tqdm
 import wandb
@@ -12,6 +14,18 @@ import wandb
 from src.model import NanoLLM
 from src.tokenizer import load_or_train_tokenizer
 from src.dataset import TinyStoriesDataset, TokenizedDataset
+
+
+def load_config(config_path: str = None) -> dict:
+    """加载配置文件"""
+    if config_path is None:
+        # 默认查找项目根目录的config.yaml
+        config_path = Path(__file__).parent.parent.parent / "nano-llm" / "config.yaml"
+    
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+    
+    return config
 
 
 def train_step(model, batch, optimizer, criterion, device):
@@ -51,21 +65,29 @@ def evaluate(model, val_loader, criterion, device, num_steps=100):
     return avg_loss, perplexity
 
 
-def train(dataset_dir: str, output_dir: str = "./output"):
+def train(dataset_dir: str, output_dir: str = "./output", config_path: str = None):
     """主训练函数"""
-    from pathlib import Path
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
-    # 配置
-    d_model = 384
-    num_heads = 8
-    num_layers = 8
-    learning_rate = 0.0001
-    batch_size = 16
-    max_length = 1024
-    max_steps = 20000
-    validation_interval = 1000
+    # 加载配置
+    config = load_config(config_path)
+    training_config = config.get("training", {})
+    
+    # 从配置中提取参数
+    d_model = training_config.get("d_model", 384)
+    num_heads = training_config.get("num_heads", 8)
+    num_layers = training_config.get("num_layers", 8)
+    d_ff_multiplier = training_config.get("d_ff_multiplier", 4)
+    max_length = training_config.get("max_length", 1024)
+    learning_rate = training_config.get("learning_rate", 0.0001)
+    batch_size = training_config.get("batch_size", 16)
+    max_steps = training_config.get("max_steps", 20000)
+    validation_interval = training_config.get("validation_interval", 1000)
+    vocab_size = training_config.get("vocab_size", 8192)
+    num_samples = training_config.get("num_samples", 50000)
+    
+    print(f"配置已加载 | d_model={d_model} | num_heads={num_heads} | num_layers={num_layers}")
     
     # 初始化wandb
     wandb_api_key = os.getenv("WANDB_API_KEY", "")
@@ -97,8 +119,8 @@ def train(dataset_dir: str, output_dir: str = "./output"):
     tokenizer = load_or_train_tokenizer(
         tokenizer_path=str(tokenizer_path),
         dataset=train_dataset_raw,  # 使用训练集训练分词器
-        vocab_size=8192,
-        num_samples=50000,
+        vocab_size=vocab_size,
+        num_samples=num_samples,
         force_retrain=False,
     )
     
@@ -116,7 +138,7 @@ def train(dataset_dir: str, output_dir: str = "./output"):
         d_model=d_model,
         num_heads=num_heads,
         num_layers=num_layers,
-        d_ff=d_model * 4,
+        ff_dim=d_model * d_ff_multiplier,
         max_seq_len=max_length,
     ).to(device)
     
@@ -134,22 +156,32 @@ def train(dataset_dir: str, output_dir: str = "./output"):
     train_iter = iter(train_loader)
     
     pbar = tqdm(total=max_steps, desc="Training")
-    
+    step_start_time = time.time()
     for step in range(max_steps):
         try:
             batch = next(train_iter)
         except StopIteration:
             train_iter = iter(train_loader)
             batch = next(train_iter)
-        
+
         loss = train_step(model, batch, optimizer, criterion, device)
+        step_time = time.time() - step_start_time
+        step_start_time = time.time()
+        
         train_ppl = torch.exp(torch.tensor(loss)).item()
         
+        time_per_sample_ms = (step_time / batch_size) * 1000
+        
         pbar.update(1)
-        pbar.set_postfix({"loss": f"{loss:.4f}", "ppl": f"{train_ppl:.2f}"})
+        pbar.set_postfix({"loss": f"{loss:.4f}", "ppl": f"{train_ppl:.2f}", "time/sample (ms)": f"{time_per_sample_ms:.2f}"})
         
         if wandb_api_key:
-            wandb.log({"train_loss": loss, "train_perplexity": train_ppl, "step": step + 1})
+            wandb.log({
+                "train_loss": loss, 
+                "train_perplexity": train_ppl, 
+                "time_per_sample_ms": time_per_sample_ms,
+                "step": step + 1
+            })
         
         # 验证和保存
         if (step + 1) % validation_interval == 0:
@@ -187,8 +219,8 @@ def train(dataset_dir: str, output_dir: str = "./output"):
 
 
 if __name__ == "__main__":
-    from pathlib import Path
-    workspace_dir = Path(__file__).parent.parent
+    workspace_dir = Path(__file__).parent.parent  # nano-llm目录
     dataset_dir = workspace_dir / "dataset" / "tinystories-narrative-classification"
-    train(dataset_dir)
+    config_path = workspace_dir / "config.yaml"
+    train(dataset_dir, config_path=str(config_path))
 
