@@ -82,14 +82,27 @@ class KaggleManager:
                 print(result.stdout)
             return True
     
+    def _check_dataset_exists(self, dataset_slug: str) -> bool:
+        """检查数据集是否存在
+        
+        Args:
+            dataset_slug: 数据集的 slug，格式为 "username/dataset-name"
+        
+        Returns:
+            存在返回 True，不存在返回 False
+        """
+        cmd = ['kaggle', 'datasets', 'status', dataset_slug]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        return result.returncode == 0
+    
     def init_metadata(self) -> bool:
         """初始化Kaggle元数据（kinit）"""
         self.notebook_dir.mkdir(parents=True, exist_ok=True)
         cmd = ['kaggle', 'kernels', 'init', '-p', str(self.notebook_dir)]
         return self._run_kaggle_command(cmd, "初始化Kaggle元数据")
     
-    def upload_secrets(self) -> bool:
-        """上传secrets数据集到Kaggle（kpush的一部分）"""
+    def upload_codespace(self) -> bool:
+        """上传代码包数据集到 Kaggle（kpush的一部分）"""
         # 清理并重建目录
         if self.secrets_dir.exists():
             shutil.rmtree(self.secrets_dir)
@@ -97,28 +110,38 @@ class KaggleManager:
         
         # 使用FileCollector收集文件
         collector = FileCollector()
-        dataset_config = self.kaggle_config.get("dataset", {})
+        code_config = self.kaggle_config.get("codespace", {})
         
         # 解析排除模式
-        ignore_patterns_file = dataset_config.get("ignore_patterns", ".gitignore")
+        ignore_patterns_file = code_config.get("ignore_patterns", ".gitignore")
         patterns_file = collector.root / ignore_patterns_file
         exclude_patterns = collector.parse_exclude_patterns(patterns_file)
         
-        # 收集文件
-        required_files = dataset_config.get("required_files", [])
-        all_files = collector.collect_files(exclude_patterns, required_files)
+        # 收集文件（使用 include_patterns 替代 required_files）
+        include_patterns = code_config.get("include_patterns", [])
+        all_files = collector.collect_files(exclude_patterns, include_patterns)
         collector.copy_files(all_files, self.secrets_dir)
         
         # 生成dataset-metadata.json
-        dataset_meta = dataset_config.copy()
+        dataset_meta = code_config.copy()
         dataset_meta.pop("ignore_patterns", None)
-        dataset_meta.pop("required_files", None)
+        dataset_meta.pop("include_patterns", None)
         
         if dataset_meta and not self._generate_metadata_file(self.secrets_dir, dataset_meta, "dataset-metadata.json"):
             return False
         
-        cmd = ['kaggle', 'datasets', 'create', '-p', str(self.secrets_dir), '-q']
-        return self._run_kaggle_command(cmd, "正在上传secrets数据集")
+        # 检查数据集是否存在
+        dataset_slug = f"{self.username}/{self._slug(dataset_meta.get('title', 'secrets'))}"
+        dataset_exists = self._check_dataset_exists(dataset_slug)
+        
+        if dataset_exists:
+            # 存在则更新
+            cmd = ['kaggle', 'datasets', 'version', '-m', "更新", '-p', str(self.secrets_dir), '-r', 'tar']
+            return self._run_kaggle_command(cmd, "正在更新代码包数据集")
+        else:
+            # 不存在则创建
+            cmd = ['kaggle', 'datasets', 'create', '-p', str(self.secrets_dir), '-r', 'tar']
+            return self._run_kaggle_command(cmd, "正在创建代码包数据集")
     
     def upload_notebook(self) -> bool:
         """推送notebook到Kaggle（kpush的一部分）"""
@@ -172,15 +195,15 @@ class KaggleManager:
         return self._run_kaggle_command(cmd, "正在获取notebook输出")
     
     def push(self) -> bool:
-        """上传secrets数据集和notebook到Kaggle（完整推送）"""
+        """上传代码包数据集和notebook到Kaggle（完整推送）"""
         try:
             load_secrets()
         except ValueError as e:
             print(f"加载配置失败: {e}")
             return False
         
-        # 上传secrets数据集
-        if not self.upload_secrets():
+        # 上传代码包数据集
+        if not self.upload_codespace():
             return False
         
         print("\n" + "="*70 + "\n")
