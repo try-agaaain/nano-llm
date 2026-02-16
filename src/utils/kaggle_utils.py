@@ -55,6 +55,19 @@ class KaggleManager:
         """将文本转换为slug格式（小写，空格转连字符）"""
         return text.lower().replace(" ", "-")
     
+    def _parse_patterns(self, patterns_config, collector: FileCollector) -> list:
+        """解析模式配置（支持文件路径字符串或模式列表）"""
+        if isinstance(patterns_config, str):
+            # 如果是字符串，则当作文件路径处理
+            patterns_file = collector.root / patterns_config
+            return collector.parse_exclude_patterns(patterns_file)
+        elif isinstance(patterns_config, list):
+            # 如果已经是列表，直接返回
+            return patterns_config
+        else:
+            # 其他情况返回空列表
+            return []
+    
     def _generate_metadata_file(self, metadata_dir: Path, metadata: dict, filename: str) -> bool:
         """生成元数据文件"""
         metadata_file = metadata_dir / filename
@@ -112,13 +125,15 @@ class KaggleManager:
         collector = FileCollector()
         code_config = self.kaggle_config.get("codespace", {})
         
-        # 解析排除模式
-        ignore_patterns_file = code_config.get("ignore_patterns", ".gitignore")
-        patterns_file = collector.root / ignore_patterns_file
-        exclude_patterns = collector.parse_exclude_patterns(patterns_file)
+        # 解析排除模式（支持文件路径字符串或模式列表）
+        ignore_patterns_config = code_config.get("ignore_patterns", ".gitignore")
+        exclude_patterns = self._parse_patterns(ignore_patterns_config, collector)
         
-        # 收集文件（使用 include_patterns 替代 required_files）
-        include_patterns = code_config.get("include_patterns", [])
+        # 解析包含模式（支持文件路径字符串或模式列表）
+        include_patterns_config = code_config.get("include_patterns", [])
+        include_patterns = self._parse_patterns(include_patterns_config, collector)
+        
+        # 收集文件
         all_files = collector.collect_files(exclude_patterns, include_patterns)
         collector.copy_files(all_files, self.secrets_dir)
         

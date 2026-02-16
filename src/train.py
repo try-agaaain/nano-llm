@@ -9,18 +9,18 @@ from torch.utils.data import DataLoader
 from pathlib import Path
 import time
 from tqdm import tqdm
-import wandb
 
 from src.model import NanoLLM
 from src.tokenizer import load_or_train_tokenizer
 from src.dataset import TinyStoriesDataset, TokenizedDataset
+from src.utils.wandb_utils import WandbManager
 
 
 def load_config(config_path: str = None) -> dict:
     """加载配置文件"""
     if config_path is None:
         # 默认查找项目根目录的config.yaml
-        config_path = Path(__file__).parent.parent.parent / "nano-llm" / "config.yaml"
+        config_path = Path(__file__).parent.parent / "config.yaml"
     
     with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
@@ -73,40 +73,29 @@ def train(dataset_dir: str, output_dir: str = "./output", config_path: str = Non
     # 加载配置
     config = load_config(config_path)
     training_config = config.get("training", {})
+    wandb_config = config.get("wandb", {})
     
     # 从配置中提取参数
-    d_model = training_config.get("d_model", 384)
-    num_heads = training_config.get("num_heads", 8)
-    num_layers = training_config.get("num_layers", 8)
-    d_ff_multiplier = training_config.get("d_ff_multiplier", 4)
-    max_length = training_config.get("max_length", 1024)
-    learning_rate = training_config.get("learning_rate", 0.0001)
-    batch_size = training_config.get("batch_size", 16)
-    max_steps = training_config.get("max_steps", 20000)
-    validation_interval = training_config.get("validation_interval", 1000)
-    vocab_size = training_config.get("vocab_size", 8192)
-    num_samples = training_config.get("num_samples", 50000)
+    d_model = training_config.get("d_model")
+    num_heads = training_config.get("num_heads")
+    num_layers = training_config.get("num_layers")
+    d_ff_multiplier = training_config.get("d_ff_multiplier")
+    max_length = training_config.get("max_length")
+    learning_rate = training_config.get("learning_rate")
+    batch_size = training_config.get("batch_size")
+    max_steps = training_config.get("max_steps")
+    validation_interval = training_config.get("validation_interval")
+    vocab_size = training_config.get("vocab_size")
+    num_samples = training_config.get("num_samples")
+
     
     print(f"配置已加载 | d_model={d_model} | num_heads={num_heads} | num_layers={num_layers}")
-    
-    # 初始化wandb
-    wandb_api_key = os.getenv("WANDB_API_KEY", "")
-    if wandb_api_key:
-        wandb.login(key=wandb_api_key)
-        wandb.init(
-            project="nano-llm",
-            name="TinyStories-training",
-            dir=str(output_path / "wandb"),
-            config={
-                "d_model": d_model,
-                "num_heads": num_heads,
-                "num_layers": num_layers,
-                "batch_size": batch_size,
-                "max_length": max_length,
-                "learning_rate": learning_rate,
-                "max_steps": max_steps,
-            }
-        )
+
+    # 初始化WandbManager（自动登陆和初始化run）
+    try:
+        wandb_manager = WandbManager(config_path=str(config_path))
+    except Exception as e:
+        raise ValueError(f"初始化W&B失败: {e}")
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
@@ -175,13 +164,11 @@ def train(dataset_dir: str, output_dir: str = "./output", config_path: str = Non
         pbar.update(1)
         pbar.set_postfix({"loss": f"{loss:.4f}", "ppl": f"{train_ppl:.2f}", "time/sample (ms)": f"{time_per_sample_ms:.2f}"})
         
-        if wandb_api_key:
-            wandb.log({
-                "train_loss": loss, 
-                "train_perplexity": train_ppl, 
-                "time_per_sample_ms": time_per_sample_ms,
-                "step": step + 1
-            })
+        wandb_manager.log({
+            "train_loss": loss, 
+            "train_perplexity": train_ppl, 
+            "time_per_sample_ms": time_per_sample_ms,
+        }, step=step + 1)
         
         # 验证和保存
         if (step + 1) % validation_interval == 0:
@@ -190,9 +177,7 @@ def train(dataset_dir: str, output_dir: str = "./output", config_path: str = Non
             model.train()
             
             print(f"\nStep {step+1}/{max_steps} | {elapsed:.1f}s | Train: {loss:.4f}/{train_ppl:.2f} | Val: {val_loss:.4f}/{val_ppl:.2f}")
-            
-            if wandb_api_key:
-                wandb.log({"val_loss": val_loss, "val_perplexity": val_ppl, "step": step + 1})
+            wandb_manager.log({"val_loss": val_loss, "val_perplexity": val_ppl}, step=step + 1)
             
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
@@ -214,8 +199,18 @@ def train(dataset_dir: str, output_dir: str = "./output", config_path: str = Non
     total_time = time.time() - start_time
     print(f"\nTraining completed in {total_time:.1f}s | Best val_loss: {best_val_loss:.4f}")
     
-    if wandb_api_key:
-        wandb.finish()
+    # 上传最佳模型到 W&B
+    try:
+        model_save_path = output_path / "best_model.pt"
+        wandb_manager.upload_model(
+            model_path=str(model_save_path),
+            version_notes=f"训练完成 | val_loss={best_val_loss:.4f} | steps={max_steps}"
+        )
+    except Exception as e:
+        print(f"上传模型到 W&B 失败: {e}")
+    
+    # 结束 W&B 运行
+    wandb_manager.finish()
 
 
 if __name__ == "__main__":

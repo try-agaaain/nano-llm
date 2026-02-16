@@ -5,6 +5,7 @@ from pathlib import Path
 
 from src.model import NanoLLM
 from src.tokenizer import load_or_train_tokenizer
+from src.utils.wandb_utils import WandbManager
 
 
 TEST_PROMPTS = [
@@ -21,10 +22,31 @@ TEST_PROMPTS = [
 ]
 
 
-def load_model(model_path="output/best_model.pt", device=None):
-    """加载模型"""
+def load_model(model_path="output/best_model.pt", from_wandb=True, wandb_version="latest", device=None):
+    """加载模型
+    
+    Args:
+        model_path: 本地模型路径
+        from_wandb: 是否从W&B下载模型
+        wandb_version: W&B模型版本
+        device: 设备
+    """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # 如果指定从W&B下载
+    if from_wandb:
+        print(f"正在从 W&B 下载模型 (版本: {wandb_version})...")
+        try:
+            manager = WandbManager()
+            downloaded_path = manager.download_model(version=wandb_version)
+            manager.finish()
+            if downloaded_path:
+                model_path = downloaded_path
+            else:
+                print("W&B下载失败，尝试使用本地模型...")
+        except Exception as e:
+            print(f"W&B下载出错: {e}，尝试使用本地模型...")
     
     print(f"Loading model from {model_path}...")
     state_dict = torch.load(model_path, map_location=device)
@@ -102,10 +124,16 @@ def interactive_mode(model, tokenizer, device):
     print("Goodbye!")
 
 
-def main(mode="test"):
-    """主函数"""
+def main(mode="test", from_wandb=True, wandb_version="latest"):
+    """主函数
+    
+    Args:
+        mode: 运行模式 ("test" 或 "interactive")
+        from_wandb: 是否从W&B下载模型
+        wandb_version: W&B模型版本
+    """
     tokenizer = load_or_train_tokenizer(tokenizer_path="./tokenizer", force_retrain=False)
-    model, device = load_model()
+    model, device = load_model(from_wandb=from_wandb, wandb_version=wandb_version)
     
     if mode == "test":
         test_mode(model, tokenizer, device)
@@ -114,4 +142,8 @@ def main(mode="test"):
 
 
 if __name__ == "__main__":
+    # 使用示例：
+    # main(mode="test")                              # 使用本地模型测试
+    # main(mode="test", from_wandb=True)             # 从W&B下载最新模型测试
+    # main(mode="interactive", from_wandb=True)      # 从W&B下载模型进入交互
     main(mode="test")  # 改为 "interactive" 进入交互模式
