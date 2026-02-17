@@ -52,6 +52,9 @@ def load_model(model_path="output/best_model.pt", from_wandb=True, wandb_version
     # 加载配置
     config = load_config(config_path)
     training_config = config.get("training", {})
+    inference_config = config.get("inference", {})
+    
+    from_wandb = inference_config.get("from_wandb", False)
     
     # 从配置中提取参数
     d_model = training_config.get("d_model", 384)
@@ -94,8 +97,7 @@ def load_model(model_path="output/best_model.pt", from_wandb=True, wandb_version
     return model, device
 
 
-def generate(model, tokenizer, device, prompt, max_length=100, temperature=0.8, top_k=50):
-    """生成文本"""
+def generate(model, tokenizer, device, prompt, max_length=100, temperature=0.1, top_k=1):
     prompt_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
     
     with torch.no_grad():
@@ -111,7 +113,7 @@ def generate(model, tokenizer, device, prompt, max_length=100, temperature=0.8, 
     return tokenizer.decode(generated_only_ids, skip_special_tokens=True).strip()
 
 
-def test_mode(model, tokenizer, device):
+def test_mode(model, tokenizer, device, temperature=0.1, top_k=1):
     """预设测试模式"""
     print("\n" + "="*70)
     print("Test Mode - Running 10 test cases")
@@ -119,11 +121,11 @@ def test_mode(model, tokenizer, device):
     
     for idx, prompt in enumerate(TEST_PROMPTS, 1):
         print(f"[{idx}/10] {prompt}")
-        output = generate(model, tokenizer, device, prompt)
+        output = generate(model, tokenizer, device, prompt, temperature=temperature, top_k=top_k)
         print(f"  → {output}\n")
 
 
-def interactive_mode(model, tokenizer, device):
+def interactive_mode(model, tokenizer, device, temperature=0.1, top_k=1):
     """交互模式"""
     print("\n" + "="*70)
     print("Interactive Mode - Type 'quit' to exit")
@@ -135,7 +137,7 @@ def interactive_mode(model, tokenizer, device):
             if not prompt or prompt.lower() in ['quit', 'exit', 'q']:
                 break
             
-            output = generate(model, tokenizer, device, prompt)
+            output = generate(model, tokenizer, device, prompt, temperature=temperature, top_k=top_k)
             print(f"Model: {output}\n")
         
         except KeyboardInterrupt:
@@ -160,20 +162,29 @@ def main(mode="test", from_wandb=True, wandb_version="latest", config_path=None)
     if config_path is None:
         config_path = workspace_dir / "config.yaml"
     
+    # 加载配置
+    config = load_config(config_path)
+    inference_config = config.get("inference", {})
+    
+    # 从配置中读取推理参数
+    temperature = inference_config.get("temperature", 0.1)
+    top_k = inference_config.get("top_k", 2)
+    
     dataset_dir = workspace_dir / "dataset" / "tinystories-narrative-classification"
     train_dataset_raw, val_dataset_raw = TinyStoriesDataset.load_datasets(dataset_dir)
     tokenizer = load_or_train_tokenizer(tokenizer_path="./output/tokenizer", dataset=train_dataset_raw, force_retrain=False)
     model, device = load_model(from_wandb=from_wandb, wandb_version=wandb_version, config_path=str(config_path))
     
     if mode == "test":
-        test_mode(model, tokenizer, device)
+        test_mode(model, tokenizer, device, temperature=temperature, top_k=top_k)
     else:
-        interactive_mode(model, tokenizer, device)
+        interactive_mode(model, tokenizer, device, temperature=temperature, top_k=top_k)
 
 
 if __name__ == "__main__":
     # 使用示例：
-    # main(mode="test")                              # 使用本地模型测试
+    # main(mode="test")                              # 使用本地模型测试(根据config.yaml配置)
     # main(mode="test", from_wandb=True)             # 从W&B下载最新模型测试
     # main(mode="interactive", from_wandb=True)      # 从W&B下载模型进入交互
+    # main(mode="interactive")                       # 使用本地模型进入交互模式
     main(mode="test")  # 改为 "interactive" 进入交互模式

@@ -216,12 +216,12 @@ class WandbManager:
         
         Args:
             version: 版本标签，默认为"latest"
-            output_dir: 下载目录，默认为"output/wandb_models"
+            output_dir: 下载目录，默认为"output"
         
         Returns:
             下载成功返回模型文件路径，失败返回None
         """
-        output_dir = output_dir or "output/wandb_models"
+        output_dir = output_dir or "output"
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         
