@@ -36,11 +36,11 @@ install:
 
 train:
 	@echo "Starting training..."
-	uv run src/train.py
+	uv run -m src.train
 
 infer:
 	@echo "Running inference..."
-	uv run src/inference.py
+	uv run -m src.inference
 
 kinit:
 	@echo "Initializing Kaggle metadata..."

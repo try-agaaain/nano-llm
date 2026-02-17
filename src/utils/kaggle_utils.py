@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Kaggle utilities for managing notebooks, secrets, and metadata"""
+"""Kaggle utilities for managing notebooks, codespace, and metadata"""
 import subprocess
 import sys
 import json
@@ -38,7 +38,7 @@ class KaggleManager:
         self.kernel_ref = f"{self.username}/{self._slug(self.notebook_title)}"
         
         # 路径配置
-        self.secrets_dir = Path("output/kaggle/secrets")
+        self.codespace_dir = Path("output/kaggle/codespace")
         self.notebook_dir = Path("output/kaggle/notebook")
         self.output_dir = Path("output/kaggle/output")
     
@@ -117,9 +117,9 @@ class KaggleManager:
     def upload_codespace(self) -> bool:
         """上传代码包数据集到 Kaggle（kpush的一部分）"""
         # 清理并重建目录
-        if self.secrets_dir.exists():
-            shutil.rmtree(self.secrets_dir)
-        self.secrets_dir.mkdir(parents=True, exist_ok=True)
+        if self.codespace_dir.exists():
+            shutil.rmtree(self.codespace_dir)
+        self.codespace_dir.mkdir(parents=True, exist_ok=True)
         
         # 使用FileCollector收集文件
         collector = FileCollector()
@@ -135,27 +135,27 @@ class KaggleManager:
         
         # 收集文件
         all_files = collector.collect_files(exclude_patterns, include_patterns)
-        collector.copy_files(all_files, self.secrets_dir)
+        collector.copy_files(all_files, self.codespace_dir)
         
         # 生成dataset-metadata.json
         dataset_meta = code_config.copy()
         dataset_meta.pop("ignore_patterns", None)
         dataset_meta.pop("include_patterns", None)
         
-        if dataset_meta and not self._generate_metadata_file(self.secrets_dir, dataset_meta, "dataset-metadata.json"):
+        if dataset_meta and not self._generate_metadata_file(self.codespace_dir, dataset_meta, "dataset-metadata.json"):
             return False
         
         # 检查数据集是否存在
-        dataset_slug = f"{self.username}/{self._slug(dataset_meta.get('title', 'secrets'))}"
+        dataset_slug = f"{self.username}/{self._slug(dataset_meta.get('title', 'codespace'))}"
         dataset_exists = self._check_dataset_exists(dataset_slug)
         
         if dataset_exists:
             # 存在则更新
-            cmd = ['kaggle', 'datasets', 'version', '-m', "更新", '-p', str(self.secrets_dir), '-r', 'tar']
+            cmd = ['kaggle', 'datasets', 'version', '-m', "更新", '-p', str(self.codespace_dir), '-r', 'tar']
             return self._run_kaggle_command(cmd, "正在更新代码包数据集")
         else:
             # 不存在则创建
-            cmd = ['kaggle', 'datasets', 'create', '-p', str(self.secrets_dir), '-r', 'tar']
+            cmd = ['kaggle', 'datasets', 'create', '-p', str(self.codespace_dir), '-r', 'tar']
             return self._run_kaggle_command(cmd, "正在创建代码包数据集")
     
     def upload_notebook(self) -> bool:
@@ -179,11 +179,11 @@ class KaggleManager:
         shutil.copy2(source_notebook, target_notebook)
         notebook_meta["code_file"] = filename
         
-        # 添加secrets
+        # 添加codespace
         dataset_sources = notebook_meta.get("dataset_sources", [])
-        secrets_source = f"{self.username}/secrets"
-        if secrets_source not in dataset_sources:
-            dataset_sources.append(secrets_source)
+        codespace_source = f"{self.username}/codespace"
+        if codespace_source not in dataset_sources:
+            dataset_sources.append(codespace_source)
         notebook_meta["dataset_sources"] = dataset_sources
         
         if notebook_meta and not self._generate_metadata_file(self.notebook_dir, notebook_meta, "kernel-metadata.json"):
@@ -237,7 +237,7 @@ def main():
         print("使用方法: kaggle_utils.py <command>")
         print("\n可用命令:")
         print("  init      - 初始化Kaggle元数据")
-        print("  push      - 上传secrets和notebook（完整推送）")
+        print("  push      - 上传codespace和notebook（完整推送）")
         print("  pull      - 拉取notebook")
         print("  status    - 检查notebook状态")
         print("  output    - 获取notebook输出")

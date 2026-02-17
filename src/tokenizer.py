@@ -88,15 +88,17 @@ def train_tokenizer_from_dataset(
 
 
 def load_or_train_tokenizer(
-    tokenizer_path: Optional[str] = "./output/tokenizer",
+    tokenizer_path: Optional[str] = None,
     dataset=None,
     vocab_size: int = 8192,
     num_samples: int = 50000,
     force_retrain: bool = False,
 ) -> TinyStoriesTokenizerFast:
     """加载或训练分词器"""
-    
-    tokenizer_path = Path(tokenizer_path)
+    if tokenizer_path is None:
+        tokenizer_path = Path(__file__).parent.parent / "output" / "tokenizer"
+    else:
+        tokenizer_path = Path(tokenizer_path)
     tokenizer_json = tokenizer_path / "tokenizer.json"
     
     if not force_retrain and tokenizer_json.exists():
@@ -112,26 +114,3 @@ def load_or_train_tokenizer(
             vocab_size=vocab_size,
             num_samples=num_samples,
         )
-
-
-if __name__ == "__main__":
-    from src.dataset import TinyStoriesDataset
-    
-    data_dir = "path/to/tinystories/dataset"
-    dataset = TinyStoriesDataset(data_dir)
-    
-    tokenizer = load_or_train_tokenizer(
-        dataset=dataset,
-        vocab_size=8192,
-        num_samples=10000,
-        force_retrain=True,
-    )
-    
-    print(f"\nVocab size: {tokenizer.vocab_size}")
-    print("\nTest encoding/decoding:")
-    
-    test_texts = ["Hello world", "The little girl", "In the forest"]
-    for text in test_texts:
-        encoded = tokenizer.encode(text, return_tensors="pt")
-        decoded = tokenizer.decode(encoded[0].tolist(), skip_special_tokens=True)
-        print(f"  {text} → {decoded}")

@@ -1,8 +1,10 @@
 """模型推理脚本"""
 
 import torch
+import yaml
 from pathlib import Path
 
+from src.dataset.tinystories import TinyStoriesDataset
 from src.model import NanoLLM
 from src.tokenizer import load_or_train_tokenizer
 from src.utils.wandb_utils import WandbManager
@@ -22,7 +24,19 @@ TEST_PROMPTS = [
 ]
 
 
-def load_model(model_path="output/best_model.pt", from_wandb=True, wandb_version="latest", device=None):
+def load_config(config_path: str = None) -> dict:
+    """加载配置文件"""
+    if config_path is None:
+        # 默认查找项目根目录的config.yaml
+        config_path = Path(__file__).parent.parent / "config.yaml"
+    
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+    
+    return config
+
+
+def load_model(model_path="output/best_model.pt", from_wandb=True, wandb_version="latest", device=None, config_path=None):
     """加载模型
     
     Args:
@@ -30,19 +44,32 @@ def load_model(model_path="output/best_model.pt", from_wandb=True, wandb_version
         from_wandb: 是否从W&B下载模型
         wandb_version: W&B模型版本
         device: 设备
+        config_path: 配置文件路径
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # 加载配置
+    config = load_config(config_path)
+    training_config = config.get("training", {})
+    
+    # 从配置中提取参数
+    d_model = training_config.get("d_model", 384)
+    num_heads = training_config.get("num_heads", 8)
+    num_layers = training_config.get("num_layers", 8)
+    d_ff_multiplier = training_config.get("d_ff_multiplier", 4)
+    max_length = training_config.get("max_length", 1024)
+    vocab_size = training_config.get("vocab_size", 8192)
     
     # 如果指定从W&B下载
     if from_wandb:
         print(f"正在从 W&B 下载模型 (版本: {wandb_version})...")
         try:
             manager = WandbManager()
-            downloaded_path = manager.download_model(version=wandb_version)
+            artifact_dir = manager.download_model(version=wandb_version)
             manager.finish()
-            if downloaded_path:
-                model_path = downloaded_path
+            if artifact_dir:
+                model_path = artifact_dir / "best_model.pt"
             else:
                 print("W&B下载失败，尝试使用本地模型...")
         except Exception as e:
@@ -51,18 +78,13 @@ def load_model(model_path="output/best_model.pt", from_wandb=True, wandb_version
     print(f"Loading model from {model_path}...")
     state_dict = torch.load(model_path, map_location=device)
     
-    # 从state_dict推断模型配置
-    d_model = state_dict['embedding.weight'].shape[1]
-    vocab_size = state_dict['embedding.weight'].shape[0]
-    max_seq_len = state_dict['pos_encoding.pe'].shape[1]
-    
     model = NanoLLM(
         vocab_size=vocab_size,
         d_model=d_model,
-        num_heads=8,
-        num_layers=8,
-        d_ff=d_model * 4,
-        max_seq_len=max_seq_len,
+        num_heads=num_heads,
+        num_layers=num_layers,
+        ff_dim=d_model * d_ff_multiplier,
+        max_seq_len=max_length,
     ).to(device)
     
     model.load_state_dict(state_dict)
@@ -124,16 +146,24 @@ def interactive_mode(model, tokenizer, device):
     print("Goodbye!")
 
 
-def main(mode="test", from_wandb=True, wandb_version="latest"):
+def main(mode="test", from_wandb=True, wandb_version="latest", config_path=None):
     """主函数
     
     Args:
         mode: 运行模式 ("test" 或 "interactive")
         from_wandb: 是否从W&B下载模型
         wandb_version: W&B模型版本
+        config_path: 配置文件路径
     """
-    tokenizer = load_or_train_tokenizer(tokenizer_path="./tokenizer", force_retrain=False)
-    model, device = load_model(from_wandb=from_wandb, wandb_version=wandb_version)
+    workspace_dir = Path(__file__).parent.parent
+    
+    if config_path is None:
+        config_path = workspace_dir / "config.yaml"
+    
+    dataset_dir = workspace_dir / "dataset" / "tinystories-narrative-classification"
+    train_dataset_raw, val_dataset_raw = TinyStoriesDataset.load_datasets(dataset_dir)
+    tokenizer = load_or_train_tokenizer(tokenizer_path="./output/tokenizer", dataset=train_dataset_raw, force_retrain=False)
+    model, device = load_model(from_wandb=from_wandb, wandb_version=wandb_version, config_path=str(config_path))
     
     if mode == "test":
         test_mode(model, tokenizer, device)

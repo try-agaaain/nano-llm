@@ -13,5 +13,5 @@ wheels/
 # Output directory (tokenizer, models, checkpoints, kaggle, wandb)
 output/
 
-# Configuration files with secrets
+# Configuration files
 config.yaml

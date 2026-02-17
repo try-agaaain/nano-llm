@@ -113,15 +113,13 @@ class FileCollector:
             if target_path.is_dir():
                 # 排除该目录下所有文件
                 for file in files:
-                    try:
-                        file.relative_to(target_path)
+                    if file.is_relative_to(target_path):
                         excluded.add(file)
-                    except ValueError:
-                        continue
             elif target_path.is_file() and not is_dir_only:
                 # 排除指定文件
                 if target_path in files:
                     excluded.add(target_path)
+        return
     
     def _exclude_recursive_pattern(self, files: Set[Path], excluded: Set[Path], pattern: str, is_dir_only: bool) -> None:
         """处理递归模式 (如 dataset 或 *.txt)
@@ -134,20 +132,19 @@ class FileCollector:
         """
         # 使用 rglob 进行递归匹配
         glob_pattern = f'**/{pattern}' if '**' not in pattern else pattern
-        
+        if "output" in pattern:
+            print(f"排除模式: {pattern} -> glob模式: {glob_pattern}")
         for path in self.root.rglob(pattern):
             if path.is_dir():
                 # 排除该目录下所有文件
                 for file in files:
-                    try:
-                        file.relative_to(path)
+                    if file.is_relative_to(path):
                         excluded.add(file)
-                    except ValueError:
-                        continue
             elif path.is_file() and not is_dir_only:
                 # 排除指定文件
                 if path in files:
                     excluded.add(path)
+        return
     
     def collect_by_patterns(self, patterns: List[str]) -> Set[Path]:
         """根据 pattern 列表收集文件（支持 glob 通配符）

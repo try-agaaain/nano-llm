@@ -244,7 +244,7 @@ class WandbManager:
             artifact_dir = artifact.download(root=str(output_path))
             
             print(f"✓ artifact已下载至: {artifact_dir}")
-            return artifact_dir
+            return Path(artifact_dir)
             
         except Exception as e:
             print(f"下载失败: {e}")
