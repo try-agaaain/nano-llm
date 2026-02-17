@@ -94,7 +94,7 @@ def load_or_train_tokenizer(
     num_samples: int = 50000,
     force_retrain: bool = False,
 ) -> TinyStoriesTokenizerFast:
-    """加载或训练分词器"""
+    """加载或训练分词器（需传入已加载的dataset）"""
     if tokenizer_path is None:
         tokenizer_path = Path(__file__).parent.parent / "output" / "tokenizer"
     else:
@@ -104,13 +104,44 @@ def load_or_train_tokenizer(
     if not force_retrain and tokenizer_json.exists():
         print(f"📖 Loading tokenizer from {tokenizer_path}")
         return TinyStoriesTokenizerFast.from_pretrained(str(tokenizer_path))
+    
+    if dataset is None:
+        raise ValueError("Dataset required for training tokenizer")
+    
+    print(f"🔧 Training new tokenizer...")
+    return train_tokenizer_from_dataset(
+        save_path=str(tokenizer_path),
+        dataset=dataset,
+        vocab_size=vocab_size,
+        num_samples=num_samples,
+    )
+
+
+def load_or_train_tokenizer_from_dir(
+    tokenizer_path: Optional[str] = None,
+    dataset_dir: Optional[str] = None,
+    vocab_size: int = 8192,
+    num_samples: int = 50000,
+    force_retrain: bool = False,
+) -> TinyStoriesTokenizerFast:
+    """加载或训练分词器（传入dataset_dir，按需加载数据集）"""
+    if tokenizer_path is None:
+        tokenizer_path = Path(__file__).parent.parent / "output" / "tokenizer"
     else:
-        if dataset is None:
-            raise ValueError("Dataset required for training tokenizer")
-        print(f"🔨 Training new tokenizer...")
-        return train_tokenizer_from_dataset(
-            save_path=str(tokenizer_path),
-            dataset=dataset,
-            vocab_size=vocab_size,
-            num_samples=num_samples,
-        )
+        tokenizer_path = Path(tokenizer_path)
+    tokenizer_json = tokenizer_path / "tokenizer.json"
+    
+    if not force_retrain and tokenizer_json.exists():
+        print(f"📖 Loading tokenizer from {tokenizer_path}")
+        return TinyStoriesTokenizerFast.from_pretrained(str(tokenizer_path))
+
+    print(f"📚 Loading dataset from {dataset_dir}")
+    dataset, _ = TinyStoriesDataset.load_datasets(dataset_dir)
+    
+    return load_or_train_tokenizer(
+        tokenizer_path=tokenizer_path,
+        dataset=dataset,
+        vocab_size=vocab_size,
+        num_samples=num_samples,
+        force_retrain=force_retrain,
+    )

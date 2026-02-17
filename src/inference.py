@@ -6,7 +6,7 @@ from pathlib import Path
 
 from src.dataset.tinystories import TinyStoriesDataset
 from src.model import NanoLLM
-from src.tokenizer import load_or_train_tokenizer
+from src.tokenizer import load_or_train_tokenizer_from_dir
 from src.utils.wandb_utils import WandbManager
 
 
@@ -171,8 +171,7 @@ def main(mode="test", from_wandb=True, wandb_version="latest", config_path=None)
     top_k = inference_config.get("top_k", 2)
     
     dataset_dir = workspace_dir / "dataset" / "tinystories-narrative-classification"
-    train_dataset_raw, val_dataset_raw = TinyStoriesDataset.load_datasets(dataset_dir)
-    tokenizer = load_or_train_tokenizer(tokenizer_path="./output/tokenizer", dataset=train_dataset_raw, force_retrain=False)
+    tokenizer = load_or_train_tokenizer_from_dir(tokenizer_path="./output/tokenizer", dataset_dir=str(dataset_dir), force_retrain=False)
     model, device = load_model(from_wandb=from_wandb, wandb_version=wandb_version, config_path=str(config_path))
     
     if mode == "test":
