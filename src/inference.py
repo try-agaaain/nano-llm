@@ -35,7 +35,7 @@ def load_config(config_path: str = None) -> dict:
     return config
 
 
-def load_model(model_path="output/best_model.pt", from_wandb=True, wandb_version="latest", device=None, config_path=None):
+def load_model(model_path="output/lastest_model.pt", from_wandb=True, wandb_version="latest", device=None, config_path=None):
     """加载模型
     
     Args:
@@ -71,7 +71,7 @@ def load_model(model_path="output/best_model.pt", from_wandb=True, wandb_version
             artifact_dir = manager.download_model(version=wandb_version)
             manager.finish()
             if artifact_dir:
-                model_path = artifact_dir / "best_model.pt"
+                model_path = artifact_dir / "lastest_model.pt"
             else:
                 print("W&B下载失败，尝试使用本地模型...")
         except Exception as e:

@@ -33,14 +33,18 @@ def train_step(model, batch, optimizer, criterion, device):
     input_ids = batch["input_ids"].to(device)
     labels = batch["labels"].to(device)
     
-    optimizer.zero_grad()
+    optimizer.zero_grad(set_to_none=True)  # 使用 set_to_none=True 更高效
     logits = model(input_ids)
     loss = criterion(logits.view(-1, logits.size(-1)), labels.view(-1))
     loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
     optimizer.step()
     
-    return loss.item()
+    # 立即获取标量值并释放计算图
+    loss_val = loss.item()
+    del logits, loss  # 显式删除以帮助内存回收
+    
+    return loss_val
 
 
 def evaluate(model, val_loader, criterion, device, num_steps=100):
@@ -65,8 +69,14 @@ def evaluate(model, val_loader, criterion, device, num_steps=100):
     return avg_loss, perplexity
 
 
-def train(output_dir: str = "./output", config_path: str = None):
-    """主训练函数"""
+def train(output_dir: str = "./output", config_path: str = None, profile_interval: int = 500):
+    """主训练函数
+    
+    Args:
+        output_dir: 输出目录
+        config_path: 配置文件路径
+        profile_interval: 时间分析间隔（步数），0表示不启用，建议500
+    """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
@@ -151,7 +161,15 @@ def train(output_dir: str = "./output", config_path: str = None):
     
     pbar = tqdm(total=max_steps, desc="Training")
     step_start_time = time.time()
+    
+    # 用于累积指标以减少 wandb 日志频率
+    log_interval = 10  # 每10步记录一次
+    accumulated_metrics = {"train_loss": [], "train_perplexity": [], "time_per_sample_ms": []}
+    
     for step in range(max_steps):
+        if device.type == "cuda" and (step + 1) % 100 == 0:
+            torch.cuda.empty_cache()
+        
         try:
             batch = next(train_iter)
         except StopIteration:
@@ -159,23 +177,33 @@ def train(output_dir: str = "./output", config_path: str = None):
             batch = next(train_iter)
 
         loss = train_step(model, batch, optimizer, criterion, device)
+
         step_time = time.time() - step_start_time
         step_start_time = time.time()
-        
+
         train_ppl = torch.exp(torch.tensor(loss)).item()
-        
         time_per_sample_ms = (step_time / batch_size) * 1000
-        
         pbar.update(1)
-        pbar.set_postfix({"loss": f"{loss:.4f}", "ppl": f"{train_ppl:.2f}", "time/sample (ms)": f"{time_per_sample_ms:.2f}"})
         
-        wandb_manager.log({
-            "train_loss": loss, 
-            "train_perplexity": train_ppl, 
-            "time_per_sample_ms": time_per_sample_ms,
-        }, step=step + 1)
+        # ========== 累积指标 ==========
+        accumulated_metrics["train_loss"].append(loss)
+        accumulated_metrics["train_perplexity"].append(train_ppl)
+        accumulated_metrics["time_per_sample_ms"].append(time_per_sample_ms)
         
-        # 验证和保存
+        # ========== W&B日志（批量记录以减少同步开销）==========
+        if (step + 1) % log_interval == 0:
+            pbar.set_postfix({"loss": f"{loss:.4f}", "ppl": f"{train_ppl:.2f}", "time/sample (ms)": f"{time_per_sample_ms:.2f}"})
+            # 记录平均值
+            avg_metrics = {
+                "train_loss": sum(accumulated_metrics["train_loss"]) / len(accumulated_metrics["train_loss"]),
+                "train_perplexity": sum(accumulated_metrics["train_perplexity"]) / len(accumulated_metrics["train_perplexity"]),
+                "time_per_sample_ms": sum(accumulated_metrics["time_per_sample_ms"]) / len(accumulated_metrics["time_per_sample_ms"]),
+            }
+            wandb_manager.log(avg_metrics, step=step + 1)
+            # 清空累积
+            accumulated_metrics = {"train_loss": [], "train_perplexity": [], "time_per_sample_ms": []}
+        
+        # ========== 验证和保存 ==========
         if (step + 1) % validation_interval == 0:
             elapsed = time.time() - start_time
             val_loss, val_ppl = evaluate(model, val_loader, criterion, device)
@@ -184,14 +212,8 @@ def train(output_dir: str = "./output", config_path: str = None):
             print(f"\nStep {step+1}/{max_steps} | {elapsed:.1f}s | Train: {loss:.4f}/{train_ppl:.2f} | Val: {val_loss:.4f}/{val_ppl:.2f}")
             wandb_manager.log({"val_loss": val_loss, "val_perplexity": val_ppl}, step=step + 1)
             
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                model_save_path = output_path / "best_model.pt"
-                torch.save(model.state_dict(), str(model_save_path))
-                print(f"✓ Saved best model (val_loss: {val_loss:.4f})")
-            
             # 保存检查点
-            checkpoint_path = output_path / f"checkpoint_step_{step + 1}.pt"
+            checkpoint_path = output_path / f"lastest_model.pt"
             torch.save({
                 "step": step + 1,
                 "model_state_dict": model.state_dict(),
@@ -206,7 +228,7 @@ def train(output_dir: str = "./output", config_path: str = None):
     
     # 上传最佳模型到 W&B
     try:
-        model_save_path = output_path / "best_model.pt"
+        model_save_path = output_path / "lastest_model.pt"
         wandb_manager.upload_model(
             model_path=str(model_save_path),
             version_notes=f"训练完成 | val_loss={best_val_loss:.4f} | steps={max_steps}"
@@ -219,7 +241,22 @@ def train(output_dir: str = "./output", config_path: str = None):
 
 
 if __name__ == "__main__":
+    import sys
+    import argparse
+    
     workspace_dir = Path(__file__).parent.parent  # nano-llm目录
     config_path = workspace_dir / "config.yaml"
-    train(config_path=str(config_path))
+    
+    # 支持命令行参数
+    parser = argparse.ArgumentParser(description="NanoLLM 训练脚本")
+    parser.add_argument("--profile", type=int, default=0, 
+                        help="时间分析间隔（步数），0表示不启用，建议500")
+    parser.add_argument("--config", type=str, default=str(config_path),
+                        help="配置文件路径")
+    parser.add_argument("--output", type=str, default="./output",
+                        help="输出目录")
+    
+    args = parser.parse_args()
+    
+    train(output_dir=args.output, config_path=args.config, profile_interval=args.profile)
 
