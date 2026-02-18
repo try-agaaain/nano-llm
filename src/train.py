@@ -92,8 +92,8 @@ def train(output_dir: str = "./output", config_path: str = None):
     # 数据集配置
     dataset_select = dataset_config.get("select", "tinystories")
     dataset_configs = dataset_config.get("configs", {})
-    selected_config = dataset_configs.get(dataset_select, {})
-    
+    current_dataset_config = dataset_configs.get(dataset_select)
+
     print(f"配置已加载 | dataset={dataset_select} | d_model={d_model} | num_heads={num_heads} | num_layers={num_layers}")
 
     # 初始化WandbManager（自动登陆和初始化run）
@@ -104,13 +104,9 @@ def train(output_dir: str = "./output", config_path: str = None):
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    # 获取数据集路径用于显示
-    workspace_dir = Path(__file__).parent.parent
-    dataset_path = selected_config.get("path", "")
-    
     # 加载数据和分词器
-    print(f"Loading dataset '{dataset_select}' from {dataset_path}")
-    train_dataset_raw, val_dataset_raw = create_dataset(dataset_select, selected_config)
+    print(f"Loading dataset '{dataset_select}'...")
+    train_dataset_raw, val_dataset_raw = create_dataset(current_dataset_config)
     
     print("Loading tokenizer...")
     tokenizer_path = output_path / "tokenizer"
@@ -119,7 +115,7 @@ def train(output_dir: str = "./output", config_path: str = None):
         dataset=train_dataset_raw,  # 使用训练集训练分词器
         vocab_size=vocab_size,
         num_samples=num_samples,
-        force_retrain=False,
+        force_retrain=False
     )
     
     print(f"Vocab size: {tokenizer.vocab_size} | Device: {device}")

@@ -4,7 +4,6 @@ import torch
 import yaml
 from pathlib import Path
 
-from src.dataset.tinystories import TinyStoriesDataset
 from src.model import NanoLLM
 from src.tokenizer import load_or_train_tokenizer_from_dir
 from src.utils.wandb_utils import WandbManager
@@ -165,29 +164,23 @@ def main(mode="test", from_wandb=True, wandb_version="latest", config_path=None)
     # 加载配置
     config = load_config(config_path)
     inference_config = config.get("inference", {})
-    dataset_config = config.get("dataset", {})
+    datasets_config = config.get("dataset", {})
     
     # 从配置中读取推理参数
     temperature = inference_config.get("temperature", 0.1)
     top_k = inference_config.get("top_k", 2)
     
-    # 数据集配置
-    dataset_select = dataset_config.get("select", "tinystories")
-    dataset_configs = dataset_config.get("configs", {})
-    selected_config = dataset_configs.get(dataset_select, {})
-    dataset_path = selected_config.get("path", "dataset/tinystories-narrative-classification")
+    # 提取选定的数据集配置
+    dataset_select = datasets_config.get("select", "tinystories")
+    dataset_configs = datasets_config.get("configs", {})
+    current_dataset_config = dataset_configs.get(dataset_select)
     
-    # 如果配置中的路径是相对路径，转换为绝对路径
-    if not Path(dataset_path).is_absolute():
-        dataset_dir = workspace_dir / dataset_path
-    else:
-        dataset_dir = dataset_path
+    if not current_dataset_config:
+        raise ValueError(f"数据集 '{dataset_select}' 未在配置中定义")
     
     tokenizer = load_or_train_tokenizer_from_dir(
         tokenizer_path="./output/tokenizer", 
-        dataset_dir=str(dataset_dir),
-        dataset_name=dataset_select,
-        dataset_config=selected_config,
+        dataset_config=current_dataset_config,
         force_retrain=False
     )
     model, device = load_model(from_wandb=from_wandb, wandb_version=wandb_version, config_path=str(config_path))

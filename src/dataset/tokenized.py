@@ -21,7 +21,17 @@ class TokenizedDataset(IterableDataset):
     
     def __iter__(self):
         """无限迭代，返回 tokenized 数据"""
-        for text in self.dataset:
+        for item in self.dataset:
+            # 从字典中提取文本（如果是字典）
+            if isinstance(item, dict):
+                text = item.get("text")
+            else:
+                text = item
+            
+            # 跳过空文本
+            if not text or not isinstance(text, str):
+                continue
+            
             tokens = self.tokenizer(
                 text,
                 truncation=True,
@@ -36,6 +46,6 @@ class TokenizedDataset(IterableDataset):
                 continue
             
             yield {
-                "input_ids": torch.tensor(input_ids[:-1], dtype=torch.long),
-                "labels": torch.tensor(input_ids[1:], dtype=torch.long),
+                "input_ids": input_ids[:-1].clone().detach().to(dtype=torch.long),
+                "labels": input_ids[1:].clone().detach().to(dtype=torch.long),
             }
