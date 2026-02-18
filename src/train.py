@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from src.model import NanoLLM
 from src.tokenizer import load_or_train_tokenizer
-from src.dataset import TinyStoriesDataset, TokenizedDataset
+from src.dataset import create_dataset, TokenizedDataset
 from src.utils.wandb_utils import WandbManager
 
 
@@ -65,7 +65,7 @@ def evaluate(model, val_loader, criterion, device, num_steps=100):
     return avg_loss, perplexity
 
 
-def train(dataset_dir: str, output_dir: str = "./output", config_path: str = None):
+def train(output_dir: str = "./output", config_path: str = None):
     """主训练函数"""
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -74,6 +74,7 @@ def train(dataset_dir: str, output_dir: str = "./output", config_path: str = Non
     config = load_config(config_path)
     training_config = config.get("training", {})
     wandb_config = config.get("wandb", {})
+    dataset_config = config.get("dataset", {})
     
     # 从配置中提取参数
     d_model = training_config.get("d_model")
@@ -87,9 +88,12 @@ def train(dataset_dir: str, output_dir: str = "./output", config_path: str = Non
     validation_interval = training_config.get("validation_interval")
     vocab_size = training_config.get("vocab_size")
     num_samples = training_config.get("num_samples")
-
     
-    print(f"配置已加载 | d_model={d_model} | num_heads={num_heads} | num_layers={num_layers}")
+    # 数据集配置
+    dataset_name = dataset_config.get("name", "tinystories")
+    dataset_path = dataset_config.get("path", "dataset/tinystories-narrative-classification")
+    
+    print(f"配置已加载 | dataset={dataset_name} | d_model={d_model} | num_heads={num_heads} | num_layers={num_layers}")
 
     # 初始化WandbManager（自动登陆和初始化run）
     try:
@@ -99,9 +103,13 @@ def train(dataset_dir: str, output_dir: str = "./output", config_path: str = Non
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
+    # 构建数据集完整路径
+    workspace_dir = Path(__file__).parent.parent
+    dataset_dir = workspace_dir / dataset_path
+    
     # 加载数据和分词器
-    print(f"Loading dataset from {dataset_dir}")
-    train_dataset_raw, val_dataset_raw = TinyStoriesDataset.load_datasets(dataset_dir)
+    print(f"Loading dataset '{dataset_name}' from {dataset_dir}")
+    train_dataset_raw, val_dataset_raw = create_dataset(dataset_name, str(dataset_dir))
     
     print("Loading tokenizer...")
     tokenizer_path = output_path / "tokenizer"
@@ -215,7 +223,6 @@ def train(dataset_dir: str, output_dir: str = "./output", config_path: str = Non
 
 if __name__ == "__main__":
     workspace_dir = Path(__file__).parent.parent  # nano-llm目录
-    dataset_dir = workspace_dir / "dataset" / "tinystories-narrative-classification"
     config_path = workspace_dir / "config.yaml"
-    train(dataset_dir, config_path=str(config_path))
+    train(config_path=str(config_path))
 

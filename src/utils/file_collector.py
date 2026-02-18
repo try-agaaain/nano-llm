@@ -131,9 +131,6 @@ class FileCollector:
             is_dir_only: 是否只匹配目录
         """
         # 使用 rglob 进行递归匹配
-        glob_pattern = f'**/{pattern}' if '**' not in pattern else pattern
-        if "output" in pattern:
-            print(f"排除模式: {pattern} -> glob模式: {glob_pattern}")
         for path in self.root.rglob(pattern):
             if path.is_dir():
                 # 排除该目录下所有文件

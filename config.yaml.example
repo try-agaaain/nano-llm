@@ -1,6 +1,66 @@
-# 配置文件模板
-# 复制此文件为 config.yaml 并填入你的真实API密钥
+secrets:
+  WANDB_API_KEY: "your_wandb_api_key_here"
+  HF_TOKEN: "your_huggingface_token_here"
+  KAGGLE_API_TOKEN: "your_kaggle_api_token_here"
 
-WANDB_API_KEY: "your_wandb_api_key_here"
-HF_TOKEN: "your_huggingface_token_here"
-KAGGLE_API_TOKEN: "your_kaggle_api_token_here"
+dataset:
+  name: "tinystories"  # tinystories or cluecorpus
+  path: "dataset/tinystories-narrative-classification"
+  # 如果使用 cluecorpus: "dataset/austenjs/ClueCorpusSmallDataset"
+
+training:
+  d_model: 384
+  num_heads: 8
+  num_layers: 8
+  d_ff_multiplier: 4
+  max_length: 1024
+  
+  learning_rate: 0.0001
+  batch_size: 32
+  max_steps: 10000
+  validation_interval: 1000
+  
+  vocab_size: 8192
+  num_samples: 50000
+
+inference:
+  temperature: 0.01
+  top_k: 1
+  from_wandb: false
+
+kaggle:
+  username: "your_username"
+  
+  notebook:
+    title: "Nano LLM"
+    code_file: "./notebook.ipynb"
+    language: "python"
+    kernel_type: "notebook"
+    accelerator: "NvidiaTeslaT4"
+    is_private: false
+    enable_gpu: true
+    enable_tpu: false
+    enable_internet: true
+    dataset_sources:
+      - "thedevastator/tinystories-narrative-classification"
+    kernel_sources: []
+    competition_sources: []
+    model_sources: []
+    docker_image: "gcr.io/kaggle-private-byod/python@sha256:58f63ed194fa7d5c55181f1e8ec0be141e9211efa23bc7501c1c865f7e00057d"
+    machine_shape: "Gpu"
+  
+  codespace:
+    title: "codespace"
+    ignore_patterns: ".gitignore"
+    include_patterns:
+      - "./config.yaml"
+    licenses:
+      - name: "CC0-1.0"
+  
+wandb:
+  username: "your_username"
+  project: "nano-llm"
+  artifact_path: "output/best_model.pt"
+  artifact_name: "nano-llm-model"
+  artifact_type: "model"
+

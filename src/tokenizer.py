@@ -7,7 +7,7 @@ import tempfile
 
 from transformers import PreTrainedTokenizerFast
 from tokenizers import Tokenizer, models, trainers, pre_tokenizers, decoders
-from src.dataset import TinyStoriesDataset
+from src.dataset import create_dataset
 
 
 class TinyStoriesTokenizerFast(PreTrainedTokenizerFast):
@@ -120,6 +120,7 @@ def load_or_train_tokenizer(
 def load_or_train_tokenizer_from_dir(
     tokenizer_path: Optional[str] = None,
     dataset_dir: Optional[str] = None,
+    dataset_name: str = "tinystories",
     vocab_size: int = 8192,
     num_samples: int = 50000,
     force_retrain: bool = False,
@@ -135,8 +136,8 @@ def load_or_train_tokenizer_from_dir(
         print(f"📖 Loading tokenizer from {tokenizer_path}")
         return TinyStoriesTokenizerFast.from_pretrained(str(tokenizer_path))
 
-    print(f"📚 Loading dataset from {dataset_dir}")
-    dataset, _ = TinyStoriesDataset.load_datasets(dataset_dir)
+    print(f"📚 Loading dataset '{dataset_name}' from {dataset_dir}")
+    dataset, _ = create_dataset(dataset_name, dataset_dir)
     
     return load_or_train_tokenizer(
         tokenizer_path=tokenizer_path,

@@ -165,13 +165,23 @@ def main(mode="test", from_wandb=True, wandb_version="latest", config_path=None)
     # 加载配置
     config = load_config(config_path)
     inference_config = config.get("inference", {})
+    dataset_config = config.get("dataset", {})
     
     # 从配置中读取推理参数
     temperature = inference_config.get("temperature", 0.1)
     top_k = inference_config.get("top_k", 2)
     
-    dataset_dir = workspace_dir / "dataset" / "tinystories-narrative-classification"
-    tokenizer = load_or_train_tokenizer_from_dir(tokenizer_path="./output/tokenizer", dataset_dir=str(dataset_dir), force_retrain=False)
+    # 数据集配置
+    dataset_name = dataset_config.get("name", "tinystories")
+    dataset_path = dataset_config.get("path", "dataset/tinystories-narrative-classification")
+    dataset_dir = workspace_dir / dataset_path
+    
+    tokenizer = load_or_train_tokenizer_from_dir(
+        tokenizer_path="./output/tokenizer", 
+        dataset_dir=str(dataset_dir),
+        dataset_name=dataset_name,
+        force_retrain=False
+    )
     model, device = load_model(from_wandb=from_wandb, wandb_version=wandb_version, config_path=str(config_path))
     
     if mode == "test":
