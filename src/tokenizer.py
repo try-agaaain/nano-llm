@@ -121,6 +121,7 @@ def load_or_train_tokenizer_from_dir(
     tokenizer_path: Optional[str] = None,
     dataset_dir: Optional[str] = None,
     dataset_name: str = "tinystories",
+    dataset_config: dict = None,
     vocab_size: int = 8192,
     num_samples: int = 50000,
     force_retrain: bool = False,
@@ -137,7 +138,8 @@ def load_or_train_tokenizer_from_dir(
         return TinyStoriesTokenizerFast.from_pretrained(str(tokenizer_path))
 
     print(f"📚 Loading dataset '{dataset_name}' from {dataset_dir}")
-    dataset, _ = create_dataset(dataset_name, dataset_dir)
+    
+    dataset, _ = create_dataset(dataset_name, dataset_config)
     
     return load_or_train_tokenizer(
         tokenizer_path=tokenizer_path,

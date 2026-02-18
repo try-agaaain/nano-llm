@@ -90,10 +90,11 @@ def train(output_dir: str = "./output", config_path: str = None):
     num_samples = training_config.get("num_samples")
     
     # 数据集配置
-    dataset_name = dataset_config.get("name", "tinystories")
-    dataset_path = dataset_config.get("path", "dataset/tinystories-narrative-classification")
+    dataset_select = dataset_config.get("select", "tinystories")
+    dataset_configs = dataset_config.get("configs", {})
+    selected_config = dataset_configs.get(dataset_select, {})
     
-    print(f"配置已加载 | dataset={dataset_name} | d_model={d_model} | num_heads={num_heads} | num_layers={num_layers}")
+    print(f"配置已加载 | dataset={dataset_select} | d_model={d_model} | num_heads={num_heads} | num_layers={num_layers}")
 
     # 初始化WandbManager（自动登陆和初始化run）
     try:
@@ -103,13 +104,13 @@ def train(output_dir: str = "./output", config_path: str = None):
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    # 构建数据集完整路径
+    # 获取数据集路径用于显示
     workspace_dir = Path(__file__).parent.parent
-    dataset_dir = workspace_dir / dataset_path
+    dataset_path = selected_config.get("path", "")
     
     # 加载数据和分词器
-    print(f"Loading dataset '{dataset_name}' from {dataset_dir}")
-    train_dataset_raw, val_dataset_raw = create_dataset(dataset_name, str(dataset_dir))
+    print(f"Loading dataset '{dataset_select}' from {dataset_path}")
+    train_dataset_raw, val_dataset_raw = create_dataset(dataset_select, selected_config)
     
     print("Loading tokenizer...")
     tokenizer_path = output_path / "tokenizer"

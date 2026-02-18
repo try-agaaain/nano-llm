@@ -172,14 +172,22 @@ def main(mode="test", from_wandb=True, wandb_version="latest", config_path=None)
     top_k = inference_config.get("top_k", 2)
     
     # 数据集配置
-    dataset_name = dataset_config.get("name", "tinystories")
-    dataset_path = dataset_config.get("path", "dataset/tinystories-narrative-classification")
-    dataset_dir = workspace_dir / dataset_path
+    dataset_select = dataset_config.get("select", "tinystories")
+    dataset_configs = dataset_config.get("configs", {})
+    selected_config = dataset_configs.get(dataset_select, {})
+    dataset_path = selected_config.get("path", "dataset/tinystories-narrative-classification")
+    
+    # 如果配置中的路径是相对路径，转换为绝对路径
+    if not Path(dataset_path).is_absolute():
+        dataset_dir = workspace_dir / dataset_path
+    else:
+        dataset_dir = dataset_path
     
     tokenizer = load_or_train_tokenizer_from_dir(
         tokenizer_path="./output/tokenizer", 
         dataset_dir=str(dataset_dir),
-        dataset_name=dataset_name,
+        dataset_name=dataset_select,
+        dataset_config=selected_config,
         force_retrain=False
     )
     model, device = load_model(from_wandb=from_wandb, wandb_version=wandb_version, config_path=str(config_path))

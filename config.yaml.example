@@ -4,9 +4,23 @@ secrets:
   KAGGLE_API_TOKEN: "your_kaggle_api_token_here"
 
 dataset:
-  name: "tinystories"  # tinystories or cluecorpus
-  path: "dataset/tinystories-narrative-classification"
-  # 如果使用 cluecorpus: "dataset/austenjs/ClueCorpusSmallDataset"
+  select: "cluecorpus"  # 当前使用的数据集配置
+  
+  configs:
+    tinystories:
+      source: "local"  # 数据源: local, modelscope, huggingface
+      dataset_id: "tinystories"
+      path: "dataset/tinystories-narrative-classification"
+    
+    cluecorpus:
+      source: "modelscope"
+      dataset_id: "austenjs/ClueCorpusSmallDataset"
+      path: "dataset/austenjs/ClueCorpusSmallDataset"
+    
+    cluecorpus_hf:
+      source: "huggingface"
+      dataset_id: "austenjs/ClueCorpusSmallDataset"
+      path: "dataset/cluecorpus_hf"
 
 training:
   d_model: 384
