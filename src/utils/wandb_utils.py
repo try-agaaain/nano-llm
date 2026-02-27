@@ -37,7 +37,7 @@ class WandbManager:
         self.project = self.wandb_config.get("project", "")
         
         # Artifact配置
-        self.artifact_path = self.wandb_config.get("artifact_path", "output/lastest_model.pt")
+        self.artifact_path = self.wandb_config.get("artifact_path", "output/latest_model.pt")
         self.artifact_name = self.wandb_config.get("artifact_name", "nano-llm-model")
         self.artifact_type = self.wandb_config.get("artifact_type", "model")
         

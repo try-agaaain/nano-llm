@@ -1,5 +1,5 @@
 from .factory import create_dataset
-from .tokenized import tokenize_function
+from .tokenizer import TokenizerFast
 
-__all__ = ["create_dataset", "tokenize_function"]
+__all__ = ["create_dataset", "TokenizerFast"]
 

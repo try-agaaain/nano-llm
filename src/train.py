@@ -6,15 +6,16 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from torch.profiler import profile, record_function, ProfilerActivity
 from transformers import DataCollatorWithPadding
+from contextlib import nullcontext
 from pathlib import Path
 import time
 from tqdm import tqdm
 
 from src.model import NanoLLM
-from src.tokenizer import load_or_train_tokenizer
+from src.dataset.tokenizer import TokenizerFast
 from src.dataset import create_dataset
-from src.dataset.tokenized import tokenize_function
 from src.utils.wandb_utils import WandbManager
 
 
@@ -32,17 +33,19 @@ def load_config(config_path: str = None) -> dict:
 
 def train_step(model, batch, optimizer, criterion, device):
     """执行单个训练step"""
-    input_ids = batch["input_ids"].to(device)
-    labels = batch["labels"].to(device)
+    # 修改点：添加 non_blocking=True
+    input_ids = batch["input_ids"].to(device, non_blocking=True)
+    labels = batch["labels"].to(device, non_blocking=True)
     
-    optimizer.zero_grad(set_to_none=True)  # 使用 set_to_none=True 更高效
+    optimizer.zero_grad(set_to_none=True)
     logits = model(input_ids)
+    
+    # 损失计算和反向传播
     loss = criterion(logits.view(-1, logits.size(-1)), labels.view(-1))
     loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
     optimizer.step() 
-    return loss
-
+    return loss.detach()
 
 def evaluate(model, val_loader, criterion, device, num_steps=100):
     """验证模型"""
@@ -53,8 +56,8 @@ def evaluate(model, val_loader, criterion, device, num_steps=100):
         for _ in range(num_steps):
             try:
                 batch = next(iter(val_loader))
-                input_ids = batch["input_ids"].to(device)
-                labels = batch["labels"].to(device)
+                input_ids = batch["input_ids"].to(device, non_blocking=True)
+                labels = batch["labels"].to(device, non_blocking=True)
                 logits = model(input_ids)
                 loss = criterion(logits.view(-1, logits.size(-1)), labels.view(-1))
                 total_loss += loss.item()
@@ -95,6 +98,14 @@ def train(output_dir: str = "./output", config_path: str = None):
     vocab_size = training_config.get("vocab_size")
     num_samples = training_config.get("num_samples")
     
+    # Profiling 配置
+    profiling_config = config.get("profiling", {})
+    enable_profiling = profiling_config.get("enabled", False)
+    profile_wait = profiling_config.get("wait", 10)
+    profile_warmup = profiling_config.get("warmup", 10)
+    profile_active = profiling_config.get("active", 20)
+    profile_repeat = profiling_config.get("repeat", 1)
+    
     # 数据集配置
     dataset_select = dataset_config.get("select", "tinystories")
     dataset_configs = dataset_config.get("configs", {})
@@ -116,7 +127,7 @@ def train(output_dir: str = "./output", config_path: str = None):
     
     print("Loading tokenizer...")
     tokenizer_path = output_path / "tokenizer"
-    tokenizer = load_or_train_tokenizer(
+    tokenizer = TokenizerFast.load_or_train(
         tokenizer_path=str(tokenizer_path),
         dataset=train_dataset_raw,  # 使用训练集训练分词器
         vocab_size=vocab_size,
@@ -130,7 +141,7 @@ def train(output_dir: str = "./output", config_path: str = None):
     print("Tokenizing datasets with multi-process...")
 
     def tokenize_with_params(examples):
-        return tokenize_function(examples, tokenizer, max_length)
+        return tokenizer.tokenize_batch(examples, max_length)
     
     # 使用 map() 进行批量多进程 tokenization
     train_dataset = train_dataset_raw.map(
@@ -199,54 +210,72 @@ def train(output_dir: str = "./output", config_path: str = None):
     
     log_interval = 10  # 每10步记录一次
     accumulated_metrics = {"train_loss": [], "train_perplexity": [], "time_per_sample_ms": []}
-    while step < max_steps:
-        for batch in train_loader:
-            loss = train_step(model, batch, optimizer, criterion, device)
-            pbar.update(1)
+    
+    if enable_profiling:
+        prof_ctx = profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            schedule=torch.profiler.schedule(
+                wait=profile_wait,
+                warmup=profile_warmup,
+                active=profile_active,
+                repeat=profile_repeat
+            ),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(str(output_path / "log")),
+            record_shapes=True,
+            with_stack=True,
+            acc_events=True
+        )
+        print(f"Profiling 已开启 | schedule(wait={profile_wait}, warmup={profile_warmup}, active={profile_active}, repeat={profile_repeat})")
+    else:
+        prof_ctx = nullcontext()
+    
+    with prof_ctx as prof:
+        while step < max_steps:
+            for batch in train_loader:
+                with record_function("train_step"):
+                    loss = train_step(model, batch, optimizer, criterion, device)
+                if prof is not None:
+                    prof.step()
+                pbar.update(1)
+                
+                accumulated_metrics["train_loss"].append(loss)
 
-            step_time = time.time() - step_start_time
-            step_start_time = time.time()
-            time_per_sample_ms = (step_time / batch_size) * 1000
-            
-            accumulated_metrics["train_loss"].append(loss)
-            accumulated_metrics["time_per_sample_ms"].append(time_per_sample_ms)
+                # ========== W&B日志（批量记录以减少同步开销）==========
+                if (step + 1) % log_interval == 0:
+                    accumulated_metrics["train_loss"] = [loss.item() for loss in accumulated_metrics["train_loss"]]
+                    avg_loss = sum(accumulated_metrics["train_loss"]) / len(accumulated_metrics["train_loss"])
+                    avg_ppl = torch.exp(torch.tensor(avg_loss)).item()
+                    pbar.set_postfix({"loss": f"{avg_loss:.4f}", "ppl": f"{avg_ppl:.2f}"})
+                    avg_metrics = {
+                        "train_loss": avg_loss,
+                        "train_perplexity": avg_ppl,
+                    }
+                    wandb_manager.log(avg_metrics, step=step + 1)
+                    # 清空累积
+                    accumulated_metrics = {"train_loss": [], "train_perplexity": []}
 
-            # ========== W&B日志（批量记录以减少同步开销）==========
-            if (step + 1) % log_interval == 0:
-                accumulated_metrics["train_loss"] = [loss.item() for loss in accumulated_metrics["train_loss"]]
-                avg_loss = sum(accumulated_metrics["train_loss"]) / len(accumulated_metrics["train_loss"])
-                avg_ppl = torch.exp(torch.tensor(avg_loss)).item()
-                avg_time = sum(accumulated_metrics["time_per_sample_ms"]) / len(accumulated_metrics["time_per_sample_ms"])
-                pbar.set_postfix({"loss": f"{avg_loss:.4f}", "ppl": f"{avg_ppl:.2f}", "time/sample (ms)": f"{avg_time:.2f}"})
-                avg_metrics = {
-                    "train_loss": avg_loss,
-                    "train_perplexity": avg_ppl,
-                    "time_per_sample_ms": avg_time,
-                }
-                wandb_manager.log(avg_metrics, step=step + 1)
-                # 清空累积
-                accumulated_metrics = {"train_loss": [], "train_perplexity": [], "time_per_sample_ms": []}
+                # ========== 验证和保存 ==========
+                if (step + 1) % validation_interval == 0:
+                    val_loss, val_ppl = evaluate(model, val_loader, criterion, device)
+                    model.train()
 
-            # ========== 验证和保存 ==========
-            if (step + 1) % validation_interval == 0:
-                elapsed = time.time() - start_time
-                val_loss, val_ppl = evaluate(model, val_loader, criterion, device)
-                model.train()
+                    print(f"\nStep {step+1}/{max_steps} | Train: {avg_loss:.4f}/{avg_ppl:.2f} | Val: {val_loss:.4f}/{val_ppl:.2f}")
+                    wandb_manager.log({"val_loss": val_loss, "val_perplexity": val_ppl}, step=step + 1)
 
-                print(f"\nStep {step+1}/{max_steps} | {elapsed:.1f}s | Train: {avg_loss:.4f}/{avg_ppl:.2f} | Val: {val_loss:.4f}/{val_ppl:.2f}")
-                wandb_manager.log({"val_loss": val_loss, "val_perplexity": val_ppl}, step=step + 1)
-
-                # 保存检查点
-                checkpoint_path = output_path / f"lastest_model.pt"
-                torch.save({
-                    "step": step + 1,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "val_loss": val_loss,
-                }, str(checkpoint_path))
-            step += 1
-            if step >= max_steps:
-                break
+                    # 保存检查点
+                    checkpoint_path = output_path / f"latest_model.pt"
+                    torch.save({
+                        "step": step + 1,
+                        "model_state_dict": model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "val_loss": val_loss,
+                    }, str(checkpoint_path))
+                step += 1
+                if step >= max_steps:
+                    break
+    
+    if enable_profiling:
+        print(f"Profiler 已完成，trace 文件已保存到 {output_path / 'log'}")
     
     pbar.close()
     
@@ -255,7 +284,7 @@ def train(output_dir: str = "./output", config_path: str = None):
     
     # 上传最佳模型到 W&B
     try:
-        model_save_path = output_path / "lastest_model.pt"
+        model_save_path = output_path / "latest_model.pt"
         wandb_manager.upload_model(
             model_path=str(model_save_path),
             version_notes=f"训练完成 | val_loss={best_val_loss:.4f} | steps={max_steps}"
